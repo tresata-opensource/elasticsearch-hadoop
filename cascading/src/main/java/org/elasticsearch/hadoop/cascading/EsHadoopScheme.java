@@ -251,7 +251,7 @@ class EsHadoopScheme extends Scheme<JobConf, RecordReader, OutputCollector, Obje
         }
 
         // grab any types stored in the index/type properties, in order to apply casts on the tuples
-        if (parts.length == 2) {
+        if (parts.length == 2 && set.getTypeDetection()) {
             String myIndex = parts[0];
             String docType = parts[1];
             String mappingsUrl = "/" + myIndex + "/_mappings";
@@ -264,10 +264,8 @@ class EsHadoopScheme extends Scheme<JobConf, RecordReader, OutputCollector, Obje
 
                 // extract map of fields to classes
                 JsonNode mappingsObj = new ObjectMapper().readTree(responseBody)
-                    .path(myIndex)
-                    .path("mappings")
-                    .path(docType)
-                    .path("properties");
+                    .path(myIndex).path("mappings")
+                    .path(docType).path("properties");
                 Iterator<java.util.Map.Entry<String, JsonNode>> nodeIterator = mappingsObj.getFields();
                 Map<String, Class> classMap = new java.util.HashMap<String, Class>();
                 while (nodeIterator.hasNext()) {

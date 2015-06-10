@@ -54,7 +54,8 @@ public class CascadingValueWriter extends FilteringValueWriter<SinkCall<Object[]
     public Result write(SinkCall<Object[], ?> sinkCall, Generator generator) {
         // consider names (in case of aliases these are already applied)
         List<String> names = (List<String>) sinkCall.getContext()[0];
-        Object typesContext = sinkCall.getContext()[1];
+        Object typesContext = null;
+        if (sinkCall.getContext().length > 1) typesContext = sinkCall.getContext()[1];
 
         final TupleEntry entry = sinkCall.getOutgoingEntry();
         final Fields fields = entry.getFields();
