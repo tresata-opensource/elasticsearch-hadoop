@@ -28,6 +28,8 @@ import org.elasticsearch.hadoop.serialization.builder.FilteringValueWriter;
 import org.elasticsearch.hadoop.serialization.builder.JdkValueWriter;
 
 import cascading.scheme.SinkCall;
+import cascading.tuple.Fields;
+import cascading.tuple.TupleEntry;
 import cascading.tuple.Tuple;
 
 /**
@@ -50,9 +52,24 @@ public class CascadingValueWriter extends FilteringValueWriter<SinkCall<Object[]
     @SuppressWarnings("unchecked")
     @Override
     public Result write(SinkCall<Object[], ?> sinkCall, Generator generator) {
-        Tuple tuple = CascadingUtils.coerceToString(sinkCall);
         // consider names (in case of aliases these are already applied)
         List<String> names = (List<String>) sinkCall.getContext()[0];
+        Object typesContext = sinkCall.getContext()[1];
+
+        final TupleEntry entry = sinkCall.getOutgoingEntry();
+        final Fields fields = entry.getFields();
+        final Tuple tuple;
+
+        if (fields.hasTypes() || typesContext == null) {
+            tuple = CascadingUtils.coerceToString(sinkCall);
+        } else {
+            Class[] types = (Class[]) typesContext;
+            if (types.length == fields.size()) {
+                tuple = entry.getCoercedTuple(types);
+            } else {
+                tuple = CascadingUtils.coerceToString(sinkCall);
+            }
+        }
 
         generator.writeBeginObject();
         for (int i = 0; i < tuple.size(); i++) {
