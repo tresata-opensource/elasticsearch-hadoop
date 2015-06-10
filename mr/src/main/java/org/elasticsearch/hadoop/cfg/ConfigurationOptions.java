@@ -123,6 +123,8 @@ public interface ConfigurationOptions {
     String ES_FIELD_READ_EMPTY_AS_NULL_DEFAULT = "yes";
     String ES_AUTO_DETECT_FIELDS = "es.field.auto.detect";
     String ES_AUTO_DETECT_FIELDS_DEFAULT = "false";
+    String ES_AUTO_CONVERT_TYPES = "es.field.detect.types";
+    String ES_AUTO_CONVERT_TYPES_DEFAULT = "false";
 
     String ES_FIELD_READ_VALIDATE_PRESENCE = "es.field.read.validate.presence";
     String ES_FIELD_READ_VALIDATE_PRESENCE_DEFAULT = "warn";

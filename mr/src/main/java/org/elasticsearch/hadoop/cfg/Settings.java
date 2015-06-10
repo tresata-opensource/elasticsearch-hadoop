@@ -146,6 +146,10 @@ public abstract class Settings {
         return Booleans.parseBoolean(getProperty(ES_AUTO_DETECT_FIELDS, ES_AUTO_DETECT_FIELDS_DEFAULT));
     }
 
+    public boolean getTypeDetection() {
+        return Booleans.parseBoolean(getProperty(ES_AUTO_CONVERT_TYPES, ES_AUTO_CONVERT_TYPES_DEFAULT));
+    }
+
     public String getOperation() {
         return getProperty(ES_WRITE_OPERATION, ES_WRITE_OPERATION_DEFAULT).toLowerCase(Locale.ENGLISH);
     }

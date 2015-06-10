@@ -19,6 +19,7 @@
 package org.elasticsearch.hadoop.cascading;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.ArrayList;
@@ -29,12 +30,15 @@ import java.util.Properties;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.RecordReader;
+import org.elasticsearch.hadoop.cfg.ConfigurationOptions;
 import org.elasticsearch.hadoop.cfg.InternalConfigurationOptions;
 import org.elasticsearch.hadoop.cfg.Settings;
+import org.elasticsearch.hadoop.cfg.HadoopSettings;
 import org.elasticsearch.hadoop.cfg.HadoopSettingsManager;
 import org.elasticsearch.hadoop.mr.EsInputFormat;
 import org.elasticsearch.hadoop.mr.EsOutputFormat;
@@ -71,7 +75,19 @@ class EsHadoopScheme extends Scheme<JobConf, RecordReader, OutputCollector, Obje
     private final String nodes;
     private final int port;
     private final Properties props;
+    private Class[] types = new Class[0];
     private boolean IS_ES_10;
+    private static final Map<String, Class> typesMap;
+    static {
+        Map<String, Class> m = new java.util.HashMap<String, Class>();
+        m.put("string", String.class);
+        m.put("integer", int.class);
+        m.put("long", long.class);
+        m.put("float", float.class);
+        m.put("double", double.class);
+        m.put("boolean", boolean.class);
+        typesMap = Collections.unmodifiableMap(m);
+    }
 
     private static Log log = LogFactory.getLog(EsHadoopScheme.class);
 
@@ -112,10 +128,11 @@ class EsHadoopScheme extends Scheme<JobConf, RecordReader, OutputCollector, Obje
     public void sinkPrepare(FlowProcess<JobConf> flowProcess, SinkCall<Object[], OutputCollector> sinkCall) throws IOException {
         super.sinkPrepare(flowProcess, sinkCall);
 
-        Object[] context = new Object[1];
+        Object[] context = new Object[2];
         // the tuple is fixed, so we can just use a collection/index
         Settings settings = loadSettings(flowProcess.getConfigCopy(), false);
         context[0] = CascadingUtils.fieldToAlias(settings, getSinkFields());
+        context[1] = types;
         sinkCall.setContext(context);
         IS_ES_10 = SettingsUtils.isEs10(settings);
     }
@@ -200,6 +217,75 @@ class EsHadoopScheme extends Scheme<JobConf, RecordReader, OutputCollector, Obje
 
         if (log.isTraceEnabled()) {
             log.trace("Initialized (sink) configuration " + HadoopCfgUtils.asProperties(conf));
+        }
+
+        String[] parts = index.split("/");
+
+        // set the es_mapping_id if the _id : path value is set for the index/type
+        if (parts.length == 2) {
+            String currentId = conf.get(ConfigurationOptions.ES_MAPPING_ID);
+            if (currentId == null) {
+                String myIndex = parts[0];
+                String docType = parts[1];
+                String indexUrl = "/" + myIndex;
+                log.info("index URL: " + indexUrl);
+                Settings settings = new HadoopSettings(conf);
+                RestClient client = new RestClient(settings);
+                try {
+                    java.io.InputStream response = client.getRaw(indexUrl);
+                    String responseBody = IOUtils.toString(response);
+
+                    // extract _id path
+                    JsonNode mappingsObj = new ObjectMapper().readTree(responseBody)
+                        .path(myIndex).path("mappings")
+                        .path(docType).path("_id").path("path");
+                    String idField = mappingsObj.getTextValue();
+                    conf.set(ConfigurationOptions.ES_MAPPING_ID, idField);
+                } catch (Exception e) {
+                    // If there is no stored _id, just continue without setting it
+                    log.info("No es.mapping.id specified");
+                } finally {
+                    client.close();
+                }
+            }
+        }
+
+        // grab any types stored in the index/type properties, in order to apply casts on the tuples
+        if (parts.length == 2 && set.getTypeDetection()) {
+            String myIndex = parts[0];
+            String docType = parts[1];
+            String mappingsUrl = "/" + myIndex + "/_mappings";
+            log.info("mappings URL: " + mappingsUrl);
+            Settings settings = new HadoopSettings(conf);
+            RestClient client = new RestClient(settings);
+            try {
+                java.io.InputStream response = client.getRaw(mappingsUrl);
+                String responseBody = IOUtils.toString(response);
+
+                // extract map of fields to classes
+                JsonNode mappingsObj = new ObjectMapper().readTree(responseBody)
+                    .path(myIndex).path("mappings")
+                    .path(docType).path("properties");
+                Iterator<java.util.Map.Entry<String, JsonNode>> nodeIterator = mappingsObj.getFields();
+                Map<String, Class> classMap = new java.util.HashMap<String, Class>();
+                while (nodeIterator.hasNext()) {
+                    java.util.Map.Entry<String, JsonNode> entry = nodeIterator.next();
+                    classMap.put(entry.getKey(), typesMap.get(entry.getValue().findValue("type").getTextValue()));
+                }
+
+                // create array of types corresponding to the sink fields
+                Fields fields = getSinkFields();
+                types = new Class[fields.size()];
+                for (int i = 0; i < fields.size(); i++) {
+                    types[i] = classMap.get(fields.get(i));
+                }
+
+            } catch (Exception e) {
+                // if there are no mappings stored, continue as usual
+                log.info("No field types found");
+            } finally {
+                client.close();
+            }
         }
     }
 
