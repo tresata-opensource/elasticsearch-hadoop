@@ -87,11 +87,11 @@ uploadArchives {
 		mavenDeployer {
 			customizePom(pom, project)
 			
-			repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
-				authentication(userName: deployUsername(), password: deployPassword())
+			repository(url: "http://server01:8080/archiva/repository/internal/") {
+				authentication(userName: mavenUser, password: mavenPassword)
             }
-			snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
-				authentication(userName: deployUsername(), password: deployPassword())
+			snapshotRepository(url: "http://server01:8080/archiva/repository/snapshots/") {
+				authentication(userName: mavenUser, password: mavenPassword)
 			}
 		}
 	}
