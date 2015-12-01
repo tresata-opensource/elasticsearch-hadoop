@@ -29,6 +29,7 @@ import org.elasticsearch.hadoop.EsHadoopIllegalStateException;
 import org.elasticsearch.hadoop.rest.stats.Stats;
 import org.elasticsearch.hadoop.rest.stats.StatsAware;
 import org.elasticsearch.hadoop.serialization.ScrollReader;
+import org.elasticsearch.hadoop.serialization.ScrollReader.Scroll;
 
 /**
  * Result streaming data from a ElasticSearch query using the scan/scroll. Performs batching underneath to retrieve data in chunks.
@@ -42,11 +43,14 @@ public class ScrollQuery implements Iterator<Object>, Closeable, StatsAware {
 
     private int batchIndex = 0;
     private long read = 0;
+    // how many docs to read - in most cases, all the docs that match
     private long size;
 
     private final ScrollReader reader;
 
     private final Stats stats = new Stats();
+
+    private boolean closed = false;
 
     ScrollQuery(RestRepository client, String scrollId, long size, ScrollReader reader) {
         this.repository = client;
@@ -57,8 +61,14 @@ public class ScrollQuery implements Iterator<Object>, Closeable, StatsAware {
 
     @Override
     public void close() {
-        finished = true;
-        batch = Collections.emptyList();
+        if (!closed) {
+            closed = true;
+            finished = true;
+            batch = Collections.emptyList();
+            // typically the scroll is closed after it is consumed so this will trigger a 404
+            // however we're closing it either way
+            repository.getRestClient().deleteScroll(scrollId);
+        }
     }
 
     @Override
@@ -73,7 +83,9 @@ public class ScrollQuery implements Iterator<Object>, Closeable, StatsAware {
             }
 
             try {
-                batch = repository.scroll(scrollId, reader);
+                Scroll scroll = repository.scroll(scrollId, reader);
+                scrollId = scroll.getScrollId();
+                batch = scroll.getHits();
             } catch (IOException ex) {
                 throw new EsHadoopIllegalStateException("Cannot retrieve scroll [" + scrollId + "]", ex);
             }

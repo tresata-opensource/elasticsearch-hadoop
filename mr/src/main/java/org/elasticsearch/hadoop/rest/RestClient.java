@@ -35,6 +35,7 @@ import org.codehaus.jackson.JsonParser;
 import org.codehaus.jackson.map.DeserializationConfig;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.SerializationConfig;
+import org.elasticsearch.hadoop.EsHadoopIllegalStateException;
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions;
 import org.elasticsearch.hadoop.cfg.Settings;
 import org.elasticsearch.hadoop.rest.Request.Method;
@@ -49,6 +50,7 @@ import org.elasticsearch.hadoop.util.ByteSequence;
 import org.elasticsearch.hadoop.util.BytesArray;
 import org.elasticsearch.hadoop.util.IOUtils;
 import org.elasticsearch.hadoop.util.ObjectUtils;
+import org.elasticsearch.hadoop.util.SettingsUtils;
 import org.elasticsearch.hadoop.util.StringUtils;
 import org.elasticsearch.hadoop.util.TrackingBytesArray;
 import org.elasticsearch.hadoop.util.unit.TimeValue;
@@ -62,6 +64,8 @@ public class RestClient implements Closeable, StatsAware {
     private final TimeValue scrollKeepAlive;
     private final boolean indexReadMissingAsEmpty;
     private final HttpRetryPolicy retryPolicy;
+
+    private final boolean isES20;
 
     {
         mapper = new ObjectMapper();
@@ -92,6 +96,8 @@ public class RestClient implements Closeable, StatsAware {
         }
 
         retryPolicy = ObjectUtils.instantiate(retryPolicyName, settings);
+
+        isES20 = SettingsUtils.isEs20(settings);
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
@@ -104,10 +110,7 @@ public class RestClient implements Closeable, StatsAware {
         for (Map value : nodes.values()) {
             String inet = (String) value.get("http_address");
             if (StringUtils.hasText(inet)) {
-                int startIp = inet.indexOf("/") + 1;
-                int endIp = inet.indexOf("]");
-                inet = inet.substring(startIp, endIp);
-                hosts.add(inet);
+                hosts.add(StringUtils.parseIpAddress(inet).toString());
             }
         }
 
@@ -167,19 +170,20 @@ public class RestClient implements Closeable, StatsAware {
 
             isRetry = true;
 
-            httpStatus = (retryFailedEntries(response.body(), data) ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.OK);
+            httpStatus = (retryFailedEntries(response, data) ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.OK);
         } while (data.length() > 0 && retry.retry(httpStatus));
 
         return data.leftoversPosition();
     }
 
     @SuppressWarnings("rawtypes")
-    private boolean retryFailedEntries(InputStream content, TrackingBytesArray data) {
+    private boolean retryFailedEntries(Response response, TrackingBytesArray data) {
+        InputStream content = response.body();
         try {
             ObjectReader r = JsonFactory.objectReader(mapper, Map.class);
             JsonParser parser = mapper.getJsonFactory().createJsonParser(content);
             try {
-                if (ParsingUtils.seek("items", new JacksonJsonParser(parser)) == null) {
+                if (ParsingUtils.seek(new JacksonJsonParser(parser), "items") == null) {
                     // recorded bytes are ack here
                     stats.bytesAccepted += data.length();
                     stats.docsAccepted += data.entries();
@@ -193,16 +197,16 @@ public class RestClient implements Closeable, StatsAware {
             for (Iterator<Map> iterator = r.readValues(parser); iterator.hasNext();) {
                 Map map = iterator.next();
                 Map values = (Map) map.values().iterator().next();
-                String error = (String) values.get("error");
+                Integer status = (Integer) values.get("status");
+
+                String error = extractError(values);
                 if (error != null) {
-                    // status - introduced in 1.0.RC1
-                    Integer status = (Integer) values.get("status");
                     if (status != null && HttpStatus.canRetry(status) || error.contains("EsRejectedExecutionException")) {
                         entryToDeletePosition++;
                     }
                     else {
                         String message = (status != null ?
-                                String.format("[%s(%s) - %s]", HttpStatus.getText(status), status, prettify(error)) : prettify(error));
+                                String.format("[%s] returned %s(%s) - %s", response.uri(), HttpStatus.getText(status), status, prettify(error)) : prettify(error));
                         throw new EsHadoopInvalidRequest(String.format("Found unrecoverable error %s; Bailing out..", message));
                     }
                 }
@@ -220,13 +224,62 @@ public class RestClient implements Closeable, StatsAware {
         }
     }
 
+    private String extractError(Map jsonMap) {
+        Object err = jsonMap.get("error");
+        String error = null;
+        if (err != null) {
+            // part of ES 2.0
+            if (err instanceof Map) {
+                Map m = ((Map) err);
+                err = m.get("root_cause");
+                if (err == null) {
+                    error = m.get("reason").toString();
+                    if (m.containsKey("caused_by")) {
+                        error += ";" + ((Map) m.get("caused_by")).get("reason");
+                    }
+                }
+                else {
+                    if (err instanceof List) {
+                        Object nested = ((List) err).get(0);
+                        if (nested instanceof Map) {
+                            Map nestedM = (Map) nested;
+                            if (nestedM.containsKey("reason")) {
+                                error = nestedM.get("reason").toString();
+                            }
+                            else {
+                                error = nested.toString();
+                            }
+                        }
+                        else {
+                            error = nested.toString();
+                        }
+                    }
+                    else {
+                        error = err.toString();
+                    }
+                }
+            }
+            else {
+                error = err.toString();
+            }
+        }
+        return error;
+    }
+
     private String prettify(String error) {
+        if (isES20) {
+            return error;
+        }
+
         String invalidFragment = ErrorUtils.extractInvalidXContent(error);
         String header = (invalidFragment != null ? "Invalid JSON fragment received[" + invalidFragment + "]" : "");
         return header + "[" + error + "]";
     }
 
     private String prettify(String error, ByteSequence body) {
+        if (isES20) {
+            return error;
+        }
         String message = ErrorUtils.extractJsonParse(error, body);
         return (message != null ? error + "; fragment[" + message + "]" : error);
     }
@@ -235,22 +288,19 @@ public class RestClient implements Closeable, StatsAware {
         execute(POST, resource.refresh());
     }
 
-    public void deleteIndex(String index) {
-        execute(DELETE, index);
-    }
-
     public List<List<Map<String, Object>>> targetShards(String index) {
         List<List<Map<String, Object>>> shardsJson = null;
 
         // https://github.com/elasticsearch/elasticsearch/issues/2726
         String target = index + "/_search_shards";
         if (indexReadMissingAsEmpty) {
-            Response res = execute(GET, target, false);
-            if (res.status() == HttpStatus.NOT_FOUND) {
-                shardsJson = Collections.emptyList();
+            Request req = new SimpleRequest(GET, null, target);
+            Response res = executeNotFoundAllowed(req);
+            if (res.status() == HttpStatus.OK) {
+                shardsJson = parseContent(res.body(), "shards");
             }
             else {
-                shardsJson = parseContent(res.body(), "shards");
+                shardsJson = Collections.emptyList();
             }
         }
         else {
@@ -280,6 +330,19 @@ public class RestClient implements Closeable, StatsAware {
         for (Entry<String, Map<String, Object>> entry : nodesData.entrySet()) {
             Node node = new Node(entry.getKey(), entry.getValue());
             if (node.isClient() && node.hasHttp()) {
+                nodes.add(node.getInet());
+            }
+        }
+        return nodes;
+    }
+
+    public List<String> getHttpDataNodes() {
+        Map<String, Map<String, Object>> nodesData = get("_nodes/http", "nodes");
+        List<String> nodes = new ArrayList<String>();
+
+        for (Entry<String, Map<String, Object>> entry : nodesData.entrySet()) {
+            Node node = new Node(entry.getKey(), entry.getValue());
+            if (node.isData() && node.hasHttp()) {
                 nodes.add(node.getInet());
             }
         }
@@ -316,16 +379,45 @@ public class RestClient implements Closeable, StatsAware {
         return execute(new SimpleRequest(method, null, path, null, buffer), true);
     }
 
+    protected Response execute(Method method, String path, ByteSequence buffer, boolean checkStatus) {
+        return execute(new SimpleRequest(method, null, path, null, buffer), checkStatus);
+    }
+
     protected Response execute(Request request, boolean checkStatus) {
         Response response = network.execute(request);
+        if (checkStatus) {
+            checkResponse(request, response);
+        }
+        return response;
+    }
 
-        if (checkStatus && response.hasFailed()) {
+    protected Response executeNotFoundAllowed(Request req) {
+        Response res = execute(req, false);
+        switch (res.status()) {
+        case HttpStatus.OK:
+            break;
+        case HttpStatus.NOT_FOUND:
+            break;
+        default:
+            checkResponse(req, res);
+        }
+
+        return res;
+    }
+
+    private void checkResponse(Request request, Response response) {
+        if (response.hasFailed()) {
             // check error first
             String msg = null;
             // try to parse the answer
             try {
-                msg = parseContent(response.body(), "error");
-                msg = prettify(msg, request.body());
+               msg = extractError(this.<Map> parseContent(response.body(), null));
+               if (response.isClientError()) {
+                    msg = msg + "\n" + request.body();
+               }
+               else {
+                   msg = prettify(msg, request.body());
+               }
             } catch (Exception ex) {
                 // can't parse message, move on
             }
@@ -338,8 +430,6 @@ public class RestClient implements Closeable, StatsAware {
 
             throw new EsHadoopInvalidRequest(msg);
         }
-
-        return response;
     }
 
     public String[] scan(String query, BytesArray body) {
@@ -357,7 +447,7 @@ public class RestClient implements Closeable, StatsAware {
         try {
             // use post instead of get to avoid some weird encoding issues (caused by the long URL)
             InputStream is = execute(POST, "_search/scroll?scroll=" + scrollKeepAlive.toString(),
-                    new BytesArray(scrollId.getBytes(StringUtils.UTF_8))).body();
+                    new BytesArray(scrollId)).body();
             stats.scrollTotal++;
             return is;
         } finally {
@@ -365,12 +455,50 @@ public class RestClient implements Closeable, StatsAware {
         }
     }
 
+    public boolean delete(String indexOrType) {
+        Request req = new SimpleRequest(DELETE, null, indexOrType);
+        Response res = executeNotFoundAllowed(req);
+        return (res.status() == HttpStatus.OK ? true : false);
+    }
+    public boolean deleteScroll(String scrollId) {
+        Request req = new SimpleRequest(DELETE, null, "_search/scroll", new BytesArray(scrollId.getBytes(StringUtils.UTF_8)));
+        Response res = executeNotFoundAllowed(req);
+        return (res.status() == HttpStatus.OK ? true : false);
+    }
+
     public boolean exists(String indexOrType) {
-        return (execute(HEAD, indexOrType, false).hasSucceeded());
+        Request req = new SimpleRequest(HEAD, null, indexOrType);
+        Response res = executeNotFoundAllowed(req);
+
+        return (res.status() == HttpStatus.OK ? true : false);
     }
 
     public boolean touch(String indexOrType) {
-        return (execute(PUT, indexOrType, false).hasSucceeded());
+        if (!exists(indexOrType)) {
+            Response response = execute(PUT, indexOrType, false);
+
+            if (response.hasFailed()) {
+                String msg = null;
+                // try to parse the answer
+                try {
+                    msg = parseContent(response.body(), "error");
+                } catch (Exception ex) {
+                    // can't parse message, move on
+                }
+
+                if (StringUtils.hasText(msg) && !msg.contains("IndexAlreadyExistsException")) {
+                    throw new EsHadoopIllegalStateException(msg);
+                }
+            }
+            return response.hasSucceeded();
+        }
+        return false;
+    }
+
+    public long count(String indexAndType, ByteSequence query) {
+        Response response = execute(GET, indexAndType + "/_count", query);
+        Number count = (Number) parseContent(response.body(), "count");
+        return (count != null ? count.longValue() : -1);
     }
 
     public boolean isAlias(String query) {
@@ -387,6 +515,9 @@ public class RestClient implements Closeable, StatsAware {
 
     public String esVersion() {
         Map<String, String> version = get("", "version");
+        if (version == null || !StringUtils.hasText(version.get("number"))) {
+            return "Unknown";
+        }
         return version.get("number");
     }
 
@@ -394,7 +525,7 @@ public class RestClient implements Closeable, StatsAware {
         StringBuilder sb = new StringBuilder("/_cluster/health/");
         sb.append(index);
         sb.append("?wait_for_status=");
-        sb.append(health.name().toLowerCase(Locale.ENGLISH));
+        sb.append(health.name().toLowerCase(Locale.ROOT));
         sb.append("&timeout=");
         sb.append(timeout.toString());
 

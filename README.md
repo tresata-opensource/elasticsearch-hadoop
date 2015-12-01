@@ -5,34 +5,34 @@ Supports [Map/Reduce](#mapreduce), [Cascading](#cascading), [Apache Hive](#apach
 See  [project page](http://www.elastic.co/products/hadoop/) and [documentation](http://www.elastic.co/guide/en/elasticsearch/hadoop/current/index.html) for detailed information.
 
 ## Requirements
-Elasticsearch (__0.9X__ series or __1.0.0__ or higher (_highly_ recommended)) cluster accessible through [REST][]. That's it!
+Elasticsearch (__1.x__ or higher (2.x _highly_ recommended)) cluster accessible through [REST][]. That's it!
 Significant effort has been invested to create a small, dependency-free, self-contained jar that can be downloaded and put to use without any dependencies. Simply make it available to your job classpath and you're set.
 For a certain library, see the dedicated [chapter](http://www.elastic.co/guide/en/elasticsearch/hadoop/current/requirements.html).
 
 ## Installation
 
-### Stable Release (currently `2.0.2`)
+### Stable Release (currently `2.1.2`)
 Available through any Maven-compatible tool:
 
 ```xml
 <dependency>
   <groupId>org.elasticsearch</groupId>
   <artifactId>elasticsearch-hadoop</artifactId>
-  <version>2.0.2</version>
+  <version>2.1.2</version>
 </dependency>
 ```
-### Beta Release (currently `2.1.0.Beta4`)
+### Beta Release (currently `2.2.0-beta1`)
 Available through any Maven-compatible tool:
 
 ```xml
 <dependency>
   <groupId>org.elasticsearch</groupId>
   <artifactId>elasticsearch-hadoop</artifactId>
-  <version>2.1.0.Beta4</version>
+  <version>2.2.0-beta1</version>
 </dependency>
 ```
-
 or as a stand-alone [ZIP](http://www.elastic.co/downloads/hadoop).
+
 
 ### Development Snapshot
 Grab the latest nightly build from the [repository](http://oss.sonatype.org/content/repositories/snapshots/org/elasticsearch/elasticsearch-hadoop/) again through Maven:
@@ -41,7 +41,7 @@ Grab the latest nightly build from the [repository](http://oss.sonatype.org/cont
 <dependency>
   <groupId>org.elasticsearch</groupId>
   <artifactId>elasticsearch-hadoop</artifactId>
-  <version>2.1.0.BUILD-SNAPSHOT</version>
+  <version>2.2.0.BUILD-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -214,7 +214,7 @@ B = FOREACH A GENERATE name, TOTUPLE(url, picture) AS links;
 STORE B INTO 'radio/artists' USING org.elasticsearch.hadoop.pig.EsStorage();
 ```
 ## [Apache Spark][]
-ES-Hadoop provides native (Java and Scala) integration with Spark: for reading a dedicated `RDD` and for writing, methods that work on any `RDD`.
+ES-Hadoop provides native (Java and Scala) integration with Spark: for reading a dedicated `RDD` and for writing, methods that work on any `RDD`. Spark SQL is also supported
 
 ### Scala
 

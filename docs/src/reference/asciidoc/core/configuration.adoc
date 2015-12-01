@@ -26,6 +26,10 @@ es.resource = twitter/tweet   # index 'twitter', type 'tweet'
 `es.resource.write`(defaults to `es.resource`)::
 {es} resource used for writing (but not reading) data. Used typically for __dynamic resource__ writes or when writing and reading data to different {es} indices within the _same_ job. Typically set automatically (expect for the {mr} module which requires manual configuration).
 
+Note that [multiple](https://www.elastic.co/guide/en/elasticsearch/guide/current/multi-index-multi-type.html) indices and/or types are allowed *only* for reading. Use `_all/types` to search `types` in all indices or `index/` to search
+all types within `index`.
+Do note that reading multiple indices/types typically works only when the have the same structure and only with some libraries. Integrations that require a strongly type mapping (such as a table like Hive or SparkSQL) are likely to fail.
+
 [[cfg-multi-writes]]
 [float]
 ===== Dynamic/multi resource writes
@@ -114,7 +118,7 @@ query dsl;;
 using the form `query_dsl` - note the query dsl needs to start with `{` and end with `}` as mentioned {ref}/search-request-body.html[here]
 
 external resource;;
-if none of the the two above do match, {eh} will try to interpret the parameter as a path within the HDFS file-system. If that is not the case, it will try to load the resource from the classpath or, if that fails, from the Hadoop `DistributedCache`. The resource should contain either a `uri query` or a `query dsl`.
+if none of the two above do match, {eh} will try to interpret the parameter as a path within the HDFS file-system. If that is not the case, it will try to load the resource from the classpath or, if that fails, from the Hadoop `DistributedCache`. The resource should contain either a `uri query` or a `query dsl`.
 
 To wit, here is an example:
 [source,ini]
@@ -151,7 +155,7 @@ The write operation {eh} should peform - can be any of:
 
 [float]
 [[cfg-mapping]]
-==== Mapping
+==== Mapping (when writing to {es})
 
 `es.mapping.id` (default none)::
 The document field/property name containing the document id.
@@ -183,15 +187,15 @@ true. The actual object type is based on the library used; noteable exception be
 
 added[2.1]
 `es.mapping.include` (default none)::
-Field/property to be included in final the document. Useful for _extracting_ the needed data from entities. The syntax is similar
+Field/property to be included in the document sent to {es}. Useful for _extracting_ the needed data from entities. The syntax is similar
 to that of {es} {ref}/search-request-source-filtering.html[include/exclude].
 Multiple values can be specified by using a comma. By default, no value is specified meaning all properties/fields are included.
 
 added[2.1]
 `es.mapping.exclude` (default none)::
-Field/property to be excluded in final the document. Useful for _eliminating_ unneeded data from entities. The syntax is similar
+Field/property to be excluded in the document sent to {es}. Useful for _eliminating_ unneeded data from entities. The syntax is similar
 to that of {es} {ref}/search-request-source-filtering.html[include/exclude].
-Multiple values can be specified by using a comma. By default, no value is specified meaning no properties/fields are excluded
+Multiple values can be specified by using a comma. By default, no value is specified meaning no properties/fields are excluded.
 
 For example:
 [source,ini]
@@ -215,7 +219,7 @@ document id extracted from field +uuid+.
 
 
 [float]
-==== Metadata
+==== Metadata (when reading from {es})
 
 +es.read.metadata+ (default false)::
 Whether to include the document metadata (such as id and version) in the results or not (default).
@@ -229,9 +233,10 @@ Whether to include the document version in the returned metadata. Applicable onl
 
 [float]
 [[cfg-update]]
-==== Update settings
+==== Update settings (when writing to {es})
 
 One using the `update` or `upsert` operation, additional settings (that mirror the {ref}/docs-update.html[update] API) are available:
+
 `es.update.script` (default none)::
 Script used for updating the document.
 
@@ -299,8 +304,19 @@ WARN main mr.EsInputFormat - Field(s) [naem, adress] not found
 Whether to discovery the nodes within the {es} cluster or only to use the ones given in `es.nodes` for metadata queries. Note that this setting only applies during start-up; afterwards when reading and writing, {eh} uses the target index shards (and their hosting nodes) unless +es.nodes.client.only+ is enabled.
 
 `es.nodes.client.only` (default false)::
-Whether to use {es} {ref}/modules-node.html[client nodes] (or _load-balancers_). When enabled, {eh} will route _all_ its requests (after nodes discovery, if enabled) through the _client_ nodes within the cluster. Note this typically significantly reduces the node parallelism and thus it is disabled by default.
+Whether to use {es} {ref}/modules-node.html[client nodes] (or _load-balancers_). When enabled, {eh} will route _all_ its requests (after nodes discovery, if enabled) through the _client_ nodes within the cluster. Note this typically significantly reduces the node parallelism and thus it is disabled by default. Enabling it also
+disables `es.nodes.data.only` (since a client node is a non-data node).
 
+added[2.1.2]
+`es.nodes.data.only` (default true)::
+Whether to use {es} {ref}/modules-node.html[data nodes] only. When enabled, {eh} will route _all_ its requests (after nodes discovery, if enabled) through the _data_ nodes within the cluster. The purpose of this configuration setting is to avoid overwhelming non-data nodes as these tend to be "smaller" nodes. This is enabled by default.
+
+added[2.2]
+`es.nodes.wan.only` (default false)::
+Whether the connector is used against an {es} instance in a cloud/restricted environment over the WAN, such as Amazon Web Services. In this mode, the connector disables discovery and _only_ connects through the declared +es.nodes+ during all operations, including reads and writes.
+Note that in this mode, performance is _highly_  affected.
+
+added[2.2]
 `es.http.timeout` (default 1m)::
 Timeout for HTTP/REST connections to {es}.
 
@@ -312,7 +328,12 @@ available {es} node (based on the declaration of `es.nodes`, followed by the dis
 The maximum duration of result scrolls between query requests.
 
 `es.scroll.size` (default 50)::
-Number of results/items returned by each individual scroll.
+Number of results/items returned by each individual per request.
+
+added[2.2]
+`es.scroll.limit` (default -1)::
+Number of _total_ results/items returned by each individual scroll. A negative value indicates that all documents that match should be returned. Do note that this applies per scroll which is typically bound to one of the job tasks.
+Thus the total number of documents returned is `LIMIT * NUMBER_OF_SCROLLS (OR TASKS)`
 
 `es.action.heart.beat.lead` (default 15s)::
 The lead to task timeout before {eh} informs Hadoop the task is still running to prevent task restart.
@@ -357,7 +378,7 @@ added[2.1]
 `es.net.proxy.socks.port`:: Http proxy port
 `es.net.proxy.socks.user`:: Http proxy user name
 `es.net.proxy.socks.pass`:: Http proxy password
-`es.net.proxy.http.use.system.props`(default yes):: Whether the use the system Socks proxy properties (namely `socksProxyHost` and `socksProxyHost`) or not
+`es.net.proxy.socks.use.system.props`(default yes):: Whether the use the system Socks proxy properties (namely `socksProxyHost` and `socksProxyHost`) or not
 
 NOTE: {eh} allows proxy settings to be applied only to its connection using the setting above. Take extra care when there is already a JVM-wide proxy setting (typically through system properties) to avoid unexpected behavior.
 
@@ -380,10 +401,10 @@ Number of retries for a given batch in case {es} is overloaded and data is rejec
 `es.batch.write.retry.wait` (default 10s)::
 Time to wait between batch write retries.
 
-`es.ser.writer.value.class` (default _depends on the library used_)::
+`es.ser.reader.value.class` (default _depends on the library used_)::
 Name of the `ValueReader` implementation for converting JSON to objects. This is set by the framework depending on the library ({mr}, Cascading, Hive, Pig, etc...) used.
 
-`es.ser.reader.value.class` (default _depends on the library used_)::
+`es.ser.writer.value.class` (default _depends on the library used_)::
 Name of the `ValueWriter` implementation for converting objects to JSON. This is set by the framework depending on the library ({mr}, Cascading, Hive, Pig, etc...) used.
 
 [[configuration-runtime]]
@@ -448,7 +469,7 @@ As the connector runs as a _library_ within Hadoop or Spark, for the most part i
 [float]
 ==== SSL/TLS configuration
 
-In case of an encrypted transport, the SSL/TLS support needs to be enabled in {eh} in order for the connector to properly communicate with {es}. This is done by setting `es.net.ssl` property to `true` and, depending on your SSL configuration (whether the certificates are signed by a CA or not, whether they are global at JVM level or just local to one application), might require setting up the `keystore` and/or `truststore`, that is where the _credentials_ are stored (`keystore` - which typically stores private keys and certificates) and how to _verify_ the them (`truststore` - which typically stores certificates from third party also known as CA - certificate authorities).
+In case of an encrypted transport, the SSL/TLS support needs to be enabled in {eh} in order for the connector to properly communicate with {es}. This is done by setting `es.net.ssl` property to `true` and, depending on your SSL configuration (whether the certificates are signed by a CA or not, whether they are global at JVM level or just local to one application), might require setting up the `keystore` and/or `truststore`, that is where the _credentials_ are stored (`keystore` - which typically stores private keys and certificates) and how to _verify_ the (`truststore` - which typically stores certificates from third party also known as CA - certificate authorities).
 Typically (and again, do note that your environment might differ significantly), if the SSL setup for {eh} is not already done at the JVM level, one needs to setup the keystore if the {eh} security requires client authentication (PKI - Public Key Infrastructure), and setup `truststore` if SSL is enabled.
 
 [float]
@@ -456,7 +477,7 @@ Typically (and again, do note that your environment might differ significantly),
 
 The authentication support in {eh} is of two types:
 
-Username/Password:: Set these through `es.net.http.auth.user` and `es.net.http.auth.path` properties.
+Username/Password:: Set these through `es.net.http.auth.user` and `es.net.http.auth.pass` properties.
 PKI/X.509:: Use X.509 certificates to authentication {eh} to {eh}. For this, one would need to setup the `keystore` containing the private key and certificate to the appropriate user (configured in {es}) and the `truststore` with the CA certificate used to sign the SSL/TLS certificates in the {es} cluster. That is one setup the key to authenticate {eh} and also to verify that is the right one. To do so, one should setup the `es.net.ssl.keystore.location` and `es.net.ssl.truststore.location` properties to indicate the `keystore` and `truststore` to use. It is recommended to have these secured through a password in which case `es.net.ssl.keystore.pass` and `es.net.ssl.truststore.pass` properties are required.
 
 
@@ -477,12 +498,14 @@ Configuring logging for Hadoop (or Cascading, Hive and Pig) is outside the scope
 |===
 | Package | Purpose
 
-|`org.elasticsearch.hadoop.cascading` 		| Cascading integration
-|`org.elasticsearch.hadoop.hive`	  		| Apache Hive integration
-|`org.elasticsearch.hadoop.mr`		  		| {mr} functionality
-|`org.elasticsearch.hadoop.pig`		  		| Apache Pig integration
-|`org.elasticsearch.hadoop.rest`	  		| REST/transport infrastructure
+|`org.elasticsearch.hadoop.cascading`       | Cascading integration
+|`org.elasticsearch.hadoop.hive`            | Apache Hive integration
+|`org.elasticsearch.hadoop.mr`              | {mr} functionality
+|`org.elasticsearch.hadoop.pig`             | Apache Pig integration
+|`org.elasticsearch.hadoop.rest`            | REST/transport infrastructure
 |`org.elasticsearch.hadoop.serialization`   | Serialization package
+|`org.elasticsearch.hadoop.spark`           | Apache Spark package
+|`org.elasticsearch.hadoop.storm`           | Apache Storm package
 
 |===
 
@@ -496,3 +519,10 @@ log4j.category.org.elasticsearch.hadoop.mr=DEBUG
 ----
 
 TIP: See the log4j https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/PropertyConfigurator.html#doConfigure%28java.lang.String,%20org.apache.log4j.spi.LoggerRepository%29[javadoc] for more information.
+
+=== Configure the 'executing' JVM logging not the client
+
+One thing to note is that in almost all cases, one needs to configure logging in the _executing_ JVM, where the Map/Reduce tasks actually run and not on the client, where the job is assembled or monitored. Depending on your library, platform and version this can done through some dedicated settings.
+In particular {mr}-based libraries like Pig or Hive can be difficult to configure since at runtime, they create {mr} tasks to actually perform the work. Thus, one needs to configure logging and pass the configuration to the {mr} layer for logging to occur.
+In both cases, this can be achieved through the `SET` command. In particular when using Hadoop 2.6, one can use `mapreduce.job.log4j-properties-file` along with an appropriate https://github.com/apache/hadoop/blob/release-2.6.0/hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-nodemanager/src/main/resources/container-log4j.properties[`container-log4j.properties`] file. 
+It's worth mentioning that Pig allows jobs to be executed locally and logging to be enabled through `pig -x local -4 myLoggingFile someScript.pig`

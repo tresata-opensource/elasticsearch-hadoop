@@ -18,8 +18,8 @@
  */
 package org.elasticsearch.hadoop.serialization.field;
 
+import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
 
 import org.elasticsearch.hadoop.util.regex.Regex;
 
@@ -33,7 +33,7 @@ public abstract class FieldFilter {
      * @param excludes
      * @return
      */
-    public static boolean filter(String path, List<String> includes, List<String> excludes) {
+    public static boolean filter(String path, Collection<String> includes, Collection<String> excludes, boolean allowPartialMatches) {
         includes = (includes == null ? Collections.<String> emptyList() : includes);
         excludes = (excludes == null ? Collections.<String> emptyList() : excludes);
 
@@ -60,8 +60,8 @@ public abstract class FieldFilter {
                         exactIncludeMatch = true;
                         break;
                     }
-                    pathIsPrefixOfAnInclude = true;
-                    continue;
+//                    pathIsPrefixOfAnInclude = true;
+//                    continue;
                 }
                 if (include.startsWith(path)) {
                     if (include.length() == path.length()) {
@@ -81,14 +81,15 @@ public abstract class FieldFilter {
             }
         }
 
-        if (!(pathIsPrefixOfAnInclude || exactIncludeMatch)) {
-            // skip subkeys, not interesting.
-            return false;
-        }
-
-        else if (exactIncludeMatch) {
+        // if match or part of the path (based on the passed param)
+        if (exactIncludeMatch || (allowPartialMatches && pathIsPrefixOfAnInclude)) {
             return true;
         }
-        return true;
+
+        return false;
+    }
+
+    public static boolean filter(String path, Collection<String> includes, Collection<String> excludes) {
+        return filter(path, includes, excludes, true);
     }
 }

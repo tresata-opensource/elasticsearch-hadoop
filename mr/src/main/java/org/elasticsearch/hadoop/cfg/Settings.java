@@ -33,7 +33,7 @@ import org.elasticsearch.hadoop.util.unit.ByteSizeValue;
 import org.elasticsearch.hadoop.util.unit.TimeValue;
 
 import static org.elasticsearch.hadoop.cfg.ConfigurationOptions.*;
-import static org.elasticsearch.hadoop.cfg.InternalConfigurationOptions.INTERNAL_ES_TARGET_FIELDS;
+import static org.elasticsearch.hadoop.cfg.InternalConfigurationOptions.*;
 
 /**
  * Holder class containing the various configuration bits used by ElasticSearch Hadoop. Handles internally the fall back to defaults when looking for undefined, optional settings.
@@ -54,11 +54,23 @@ public abstract class Settings {
     }
 
     public boolean getNodesDiscovery() {
-        return Booleans.parseBoolean(getProperty(ES_NODES_DISCOVERY, ES_NODES_DISCOVERY_DEFAULT));
+        // by default, if not set, return a value compatible with the WAN setting
+        // otherwise return the user value.
+        // this helps validate the configuration
+        return Booleans.parseBoolean(getProperty(ES_NODES_DISCOVERY), !getNodesWANOnly());
+    }
+
+    public boolean getNodesDataOnly() {
+        // by default, if not set, return a value compatible with the WAN setting (see above)
+        return Booleans.parseBoolean(getProperty(ES_NODES_DATA_ONLY), !getNodesWANOnly() && !getNodesClientOnly());
     }
 
     public boolean getNodesClientOnly() {
         return Booleans.parseBoolean(getProperty(ES_NODES_CLIENT_ONLY, ES_NODES_CLIENT_ONLY_DEFAULT));
+    }
+
+    public boolean getNodesWANOnly() {
+        return Booleans.parseBoolean(getProperty(ES_NODES_WAN_ONLY, ES_NODES_WAN_ONLY_DEFAULT));
     }
 
     public long getHttpTimeout() {
@@ -105,11 +117,15 @@ public abstract class Settings {
         return Long.valueOf(getProperty(ES_SCROLL_SIZE, ES_SCROLL_SIZE_DEFAULT));
     }
 
-    public String getScrollFields() {
-        String internalFields = getProperty(INTERNAL_ES_TARGET_FIELDS);
-        return (StringUtils.hasText(internalFields) ? internalFields : getProperty(ES_SCROLL_FIELDS));
+    public long getScrollLimit() {
+        return Long.valueOf(getProperty(ES_SCROLL_LIMIT, ES_SCROLL_LIMIT_DEFAULT));
     }
 
+    public String getScrollFields() {
+        return getProperty(INTERNAL_ES_TARGET_FIELDS);
+    }
+
+    @Deprecated
     public boolean getScrollEscapeUri() {
         return Booleans.parseBoolean(getProperty(ES_SCROLL_ESCAPE_QUERY_URI, ES_SCROLL_ESCAPE_QUERY_URI_DEFAULT));
     }
@@ -151,7 +167,7 @@ public abstract class Settings {
     }
 
     public String getOperation() {
-        return getProperty(ES_WRITE_OPERATION, ES_WRITE_OPERATION_DEFAULT).toLowerCase(Locale.ENGLISH);
+        return getProperty(ES_WRITE_OPERATION, ES_WRITE_OPERATION_DEFAULT).toLowerCase(Locale.ROOT);
     }
 
     public String getMappingId() {
@@ -282,6 +298,14 @@ public abstract class Settings {
 
     public FieldPresenceValidation getFieldExistanceValidation() {
         return FieldPresenceValidation.valueOf(getProperty(ES_FIELD_READ_VALIDATE_PRESENCE, ES_FIELD_READ_VALIDATE_PRESENCE_DEFAULT).toUpperCase(Locale.ENGLISH));
+    }
+
+    public String getFieldReadAsArrayInclude() {
+        return getProperty(ES_FIELD_READ_AS_ARRAY_INCLUDE, StringUtils.EMPTY);
+    }
+
+    public String getFieldReadAsArrayExclude() {
+        return getProperty(ES_FIELD_READ_AS_ARRAY_EXCLUDE, StringUtils.EMPTY);
     }
 
     public TimeValue getHeartBeatLead() {
@@ -485,5 +509,5 @@ public abstract class Settings {
         return IOUtils.propsToString(copy);
     }
 
-    protected abstract Properties asProperties();
+    public abstract Properties asProperties();
 }

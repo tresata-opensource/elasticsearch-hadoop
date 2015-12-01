@@ -18,26 +18,37 @@
  */
 package org.elasticsearch.spark.integration;
 
-
-import java.{util => ju, lang => jl}
-
+import java.awt.Polygon
+import java.{lang => jl}
+import java.{util => ju}
 import java.util.concurrent.TimeUnit
+
 import scala.collection.JavaConverters._
+import scala.collection.JavaConversions.propertiesAsScalaMap
+import scala.collection.JavaConverters.asScalaBufferConverter
+import scala.collection.JavaConverters.mapAsJavaMapConverter
+
+
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
+import org.apache.spark.SparkException
+import org.elasticsearch.hadoop.cfg.ConfigurationOptions._
+import org.elasticsearch.hadoop.cfg.ConfigurationOptions
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions.ES_INPUT_JSON
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions.ES_MAPPING_EXCLUDE
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions.ES_MAPPING_ID
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions.ES_QUERY
-import org.elasticsearch.hadoop.cfg.ConfigurationOptions.ES_RESOURCE
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions.ES_READ_METADATA
-import org.elasticsearch.hadoop.cfg.ConfigurationOptions._
+import org.elasticsearch.hadoop.cfg.ConfigurationOptions.ES_RESOURCE
 import org.elasticsearch.hadoop.mr.RestUtils
 import org.elasticsearch.hadoop.util.TestSettings
 import org.elasticsearch.hadoop.util.TestUtils
+import org.elasticsearch.spark.rdd.EsSpark
 import org.elasticsearch.spark.rdd.Metadata.ID
 import org.elasticsearch.spark.rdd.Metadata.TTL
 import org.elasticsearch.spark.rdd.Metadata.VERSION
+import org.elasticsearch.spark.serialization.Bean
+import org.elasticsearch.spark.serialization.ReflectionUtils
 import org.elasticsearch.spark.sparkByteArrayJsonRDDFunctions
 import org.elasticsearch.spark.sparkPairRDDFunctions
 import org.elasticsearch.spark.sparkRDDFunctions
@@ -50,26 +61,19 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThat
 import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
-import java.awt.Polygon
-import org.elasticsearch.spark.rdd.EsSpark
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.junit.runners.MethodSorters
 import org.junit.runners.Parameterized
 import org.junit.runners.Parameterized.Parameters
-import org.elasticsearch.hadoop.serialization.EsHadoopSerializationException
-import org.apache.spark.SparkException
-import org.elasticsearch.spark.serialization.ReflectionUtils
-import org.elasticsearch.spark.serialization.Bean
-import org.elasticsearch.hadoop.cfg.ConfigurationOptions
 
 object AbstractScalaEsScalaSpark {
-  @transient val conf = new SparkConf().setAll(TestSettings.TESTING_PROPS.asScala).setMaster("local").setAppName("estest")
+  @transient val conf = new SparkConf().set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").setMaster("local").setAppName("estest")
   @transient var cfg: SparkConf = null
   @transient var sc: SparkContext = null
 
   @BeforeClass
   def setup() {
+    conf.setAll(TestSettings.TESTING_PROPS);
     sc = new SparkContext(conf)
   }
 
@@ -145,6 +149,7 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
     sc.makeRDD(Seq(javaBean, caseClass2)).saveToEs(target, Map("es.mapping.id"->"id"))
 
     assertTrue(RestUtils.exists(target))
+    assertEquals(3, EsSpark.esRDD(sc, target).count());
     assertThat(RestUtils.get(target + "/_search?"), containsString(""))
   }
 
@@ -156,6 +161,8 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
     val target = "spark-test/scala-id-write"
 
     sc.makeRDD(Seq(doc1, doc2)).saveToEs(target, Map(ES_MAPPING_ID -> "number"))
+
+    assertEquals(2, EsSpark.esRDD(sc, target).count());
     assertTrue(RestUtils.exists(target + "/1"))
     assertTrue(RestUtils.exists(target + "/2"))
 
@@ -171,6 +178,7 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
 
     val pairRDD = sc.makeRDD(Seq((3, doc1), (4, doc2))).saveToEsWithMeta(target, cfg)
 
+    assertEquals(2, EsSpark.esRDD(sc, target).count());
     assertTrue(RestUtils.exists(target + "/3"))
     assertTrue(RestUtils.exists(target + "/4"))
 
@@ -254,8 +262,8 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
   def testEsRDDRead() {
     val target = wrapIndex("spark-test/scala-basic-read")
     RestUtils.touch(wrapIndex("spark-test"))
-    RestUtils.putData(target, "{\"message\" : \"Hello World\",\"message_date\" : \"2014-05-25\"}".getBytes())
-    RestUtils.putData(target, "{\"message\" : \"Goodbye World\",\"message_date\" : \"2014-05-25\"}".getBytes())
+    RestUtils.postData(target, "{\"message\" : \"Hello World\",\"message_date\" : \"2014-05-25\"}".getBytes())
+    RestUtils.postData(target, "{\"message\" : \"Goodbye World\",\"message_date\" : \"2014-05-25\"}".getBytes())
     RestUtils.refresh(wrapIndex("spark-test"))
 
     val esData = EsSpark.esRDD(sc, target, cfg)
@@ -270,8 +278,8 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
   def testEsRDDReadQuery() {
     val target = "spark-test/scala-basic-query-read"
     RestUtils.touch("spark-test")
-    RestUtils.putData(target, "{\"message\" : \"Hello World\",\"message_date\" : \"2014-05-25\"}".getBytes())
-    RestUtils.putData(target, "{\"message\" : \"Goodbye World\",\"message_date\" : \"2014-05-25\"}".getBytes())
+    RestUtils.postData(target, "{\"message\" : \"Hello World\",\"message_date\" : \"2014-05-25\"}".getBytes())
+    RestUtils.postData(target, "{\"message\" : \"Goodbye World\",\"message_date\" : \"2014-05-25\"}".getBytes())
     RestUtils.refresh("spark-test");
 
     val queryTarget = "*/scala-basic-query-read"
@@ -294,8 +302,8 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
   def testEsRDDReadAsJson() {
     val target = wrapIndex("spark-test/scala-basic-json-read")
     RestUtils.touch(wrapIndex("spark-test"))
-    RestUtils.putData(target, "{\"message\" : \"Hello World\",\"message_date\" : \"2014-05-25\"}".getBytes())
-    RestUtils.putData(target, "{\"message\" : \"Goodbye World\",\"message_date\" : \"2014-05-25\"}".getBytes())
+    RestUtils.postData(target, "{\"message\" : \"Hello World\",\"message_date\" : \"2014-05-25\"}".getBytes())
+    RestUtils.postData(target, "{\"message\" : \"Goodbye World\",\"message_date\" : \"2014-05-25\"}".getBytes())
     RestUtils.refresh(wrapIndex("spark-test"))
 
     val esData = EsSpark.esJsonRDD(sc, target, cfg)
@@ -315,8 +323,8 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
     val indexB = wrapIndex("spark-alias-indexb/type")
     val alias = wrapIndex("spark-alias-alias")
 
-    RestUtils.putData(indexA + "/1", doc.getBytes())
-    RestUtils.putData(indexB + "/1", doc.getBytes())
+    RestUtils.postData(indexA + "/1", doc.getBytes())
+    RestUtils.postData(indexB + "/1", doc.getBytes())
 
     val aliases = """
         |{"actions" : [
@@ -326,7 +334,7 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
         """.stripMargin
 
     println(aliases)
-    RestUtils.putData("_aliases", aliases.getBytes());
+    RestUtils.postData("_aliases", aliases.getBytes());
     RestUtils.refresh(alias)
 
     val aliasRDD = EsSpark.esJsonRDD(sc, alias + "/type", cfg)
@@ -338,12 +346,42 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
     val data = Seq(
       Map("field1" -> 5.4, "field2" -> "foo"),
       Map("field2" -> "bar"),
-      Map("field1" -> "", "field2" -> "baz")
+      Map("field1" -> 0.0, "field2" -> "baz")
     )
     val target = wrapIndex("spark-test/nullasempty")
     sc.makeRDD(data).saveToEs(target)
 
     assertEquals(3, EsSpark.esRDD(sc, target, cfg).count())
+  }
+
+  @Test
+  def testNewIndexWithTemplate() {
+    val target = wrapIndex("spark-template-index/alias")
+
+    val template = """
+      |{"template" : """".stripMargin + "*" + """",
+        |"settings" : {
+        |    "number_of_shards" : 1,
+        |    "number_of_replicas" : 0
+        |},
+        |"mappings" : {
+        |  "alias" : {
+        |    "properties" : {
+        |      "name" : { "type" : "string" },
+        |      "number" : { "type" : "long" },
+        |      "@ImportDate" : { "type" : "date" }
+        |     }
+        |   }
+        | },
+        |"aliases" : { "spark-temp-index" : {} }
+      |}""".stripMargin
+    RestUtils.put("_template/" + wrapIndex("test_template"), template.getBytes)
+
+    val rdd = sc.textFile(TestUtils.sampleArtistsJson())
+    EsSpark.saveJsonToEs(rdd, target)
+    val esRDD = EsSpark.esRDD(sc, target, cfg)
+    println(esRDD.count)
+    println(RestUtils.getMapping(target))
   }
 
   //@Test
@@ -358,7 +396,7 @@ class AbstractScalaEsScalaSpark(prefix: String, readMetadata: jl.Boolean) extend
         |}
       |}
       |}""".stripMargin
-    RestUtils.putData("lost", createIndex.getBytes());
+    RestUtils.postData("lost", createIndex.getBytes());
 
     val rdd = sc.textFile("some.json")
     EsSpark.saveJsonToEs(rdd, target, collection.mutable.Map(cfg.toSeq: _*) += (

@@ -29,6 +29,7 @@ public interface ConfigurationOptions {
 
     /** Elasticsearch host **/
     // deprecated
+    @Deprecated
     String ES_HOST = "es.host";
     String ES_NODES = "es.nodes";
     String ES_NODES_DEFAULT = "localhost";
@@ -51,6 +52,14 @@ public interface ConfigurationOptions {
     String ES_NODES_CLIENT_ONLY = "es.nodes.client.only";
     String ES_NODES_CLIENT_ONLY_DEFAULT = "false";
 
+    /** Data only */
+    String ES_NODES_DATA_ONLY = "es.nodes.data.only";
+    String ES_NODES_DATA_ONLY_DEFAULT = "true";
+
+    /** WAN only */
+    String ES_NODES_WAN_ONLY = "es.nodes.wan.only";
+    String ES_NODES_WAN_ONLY_DEFAULT = "false";
+
     /** Elasticsearch batch size given in bytes */
     String ES_BATCH_SIZE_BYTES = "es.batch.size.bytes";
     String ES_BATCH_SIZE_BYTES_DEFAULT = "1mb";
@@ -59,7 +68,7 @@ public interface ConfigurationOptions {
     String ES_BATCH_SIZE_ENTRIES = "es.batch.size.entries";
     String ES_BATCH_SIZE_ENTRIES_DEFAULT = "1000";
 
-    /** Elasticsearch batch size given in entries */
+    /** Elasticsearch disable auto-flush on batch overflow */
     String ES_BATCH_FLUSH_MANUAL = "es.batch.flush.manual";
     String ES_BATCH_FLUSH_MANUAL_DEFAULT = "false";
 
@@ -94,10 +103,15 @@ public interface ConfigurationOptions {
     String ES_SCROLL_SIZE = "es.scroll.size";
     String ES_SCROLL_SIZE_DEFAULT = "50";
 
-    /** Scroll fields */
-    String ES_SCROLL_FIELDS = "es.scroll.fields";
+    /** Scroll limit */
+    String ES_SCROLL_LIMIT = "es.scroll.limit";
+    String ES_SCROLL_LIMIT_DEFAULT = "-1";
 
+    /** Scroll fields */
+
+    @Deprecated
     String ES_SCROLL_ESCAPE_QUERY_URI = "es.scroll.escape.query.uri";
+    @Deprecated
     String ES_SCROLL_ESCAPE_QUERY_URI_DEFAULT = "true";
 
     String ES_HEART_BEAT_LEAD = "es.action.heart.beat.lead";
@@ -128,6 +142,9 @@ public interface ConfigurationOptions {
 
     String ES_FIELD_READ_VALIDATE_PRESENCE = "es.field.read.validate.presence";
     String ES_FIELD_READ_VALIDATE_PRESENCE_DEFAULT = "warn";
+
+    String ES_FIELD_READ_AS_ARRAY_INCLUDE = "es.field.read.as.array.include";
+    String ES_FIELD_READ_AS_ARRAY_EXCLUDE = "es.field.read.as.array.exclude";
 
     /** Index settings */
     String ES_INDEX_AUTO_CREATE = "es.index.auto.create";

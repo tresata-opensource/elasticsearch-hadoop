@@ -1,5 +1,6 @@
 package org.elasticsearch.spark.sql
 
+import java.sql.Date
 import java.sql.Timestamp
 import java.util.{Map => JMap}
 
@@ -9,27 +10,28 @@ import scala.collection.Seq
 
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.types.ArrayType
-import org.apache.spark.sql.types.BinaryType
-import org.apache.spark.sql.types.BooleanType
-import org.apache.spark.sql.types.ByteType
 import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.DataTypes.BinaryType
+import org.apache.spark.sql.types.DataTypes.BooleanType
+import org.apache.spark.sql.types.DataTypes.ByteType
+import org.apache.spark.sql.types.DataTypes.DateType
+import org.apache.spark.sql.types.DataTypes.DoubleType
+import org.apache.spark.sql.types.DataTypes.FloatType
+import org.apache.spark.sql.types.DataTypes.IntegerType
+import org.apache.spark.sql.types.DataTypes.LongType
+import org.apache.spark.sql.types.DataTypes.ShortType
+import org.apache.spark.sql.types.DataTypes.StringType
+import org.apache.spark.sql.types.DataTypes.TimestampType
 import org.apache.spark.sql.types.DecimalType
-import org.apache.spark.sql.types.DoubleType
-import org.apache.spark.sql.types.FloatType
-import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.sql.types.LongType
 import org.apache.spark.sql.types.MapType
-import org.apache.spark.sql.types.ShortType
-import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.types.TimestampType
 import org.elasticsearch.hadoop.serialization.EsHadoopSerializationException
 import org.elasticsearch.hadoop.serialization.Generator
 import org.elasticsearch.hadoop.serialization.builder.FilteringValueWriter
 import org.elasticsearch.hadoop.serialization.builder.ValueWriter.Result
 import org.elasticsearch.spark.serialization.ScalaValueWriter
+
 
 class DataFrameValueWriter(writeUnknownTypes: Boolean = false) extends FilteringValueWriter[(Row, StructType)] {
 
@@ -48,7 +50,7 @@ class DataFrameValueWriter(writeUnknownTypes: Boolean = false) extends Filtering
 
   private[spark] def writeStruct(schema: StructType, value: Any, generator: Generator): Result = {
     value match {
-      case r: GenericRowWithSchema =>
+      case r: Row =>
         generator.writeBeginObject()
 
         schema.fields.view.zipWithIndex foreach {
@@ -144,18 +146,21 @@ class DataFrameValueWriter(writeUnknownTypes: Boolean = false) extends Filtering
       case DoubleType    => generator.writeNumber(value.asInstanceOf[Double])
       case FloatType     => generator.writeNumber(value.asInstanceOf[Float])
       case TimestampType => generator.writeNumber(value.asInstanceOf[Timestamp].getTime())
+      case DateType      => generator.writeNumber(value.asInstanceOf[Date].getTime())
       case StringType    => generator.writeString(value.toString)
-      case _             => return handleUnknown(value, generator)
+      case _             => {
+        val className = schema.getClass().getName()
+        if ("org.apache.spark.sql.types.DecimalType".equals(className) || "org.apache.spark.sql.catalyst.types.DecimalType".equals(className)) {
+          throw new EsHadoopSerializationException("Decimal types are not supported by Elasticsearch - consider using a different type (such as string)")
+        }
+        return handleUnknown(value, generator)
+      }
     }
+
     Result.SUCCESFUL()
   }
 
   protected def handleUnknown(value: Any, generator: Generator): Result = {
-    // Spark 1.2 broke DecimalType bwc with Spark 1.1 
-    if (value.getClass() == DecimalType.getClass()) {
-      throw new EsHadoopSerializationException("Decimal types are not supported by Elasticsearch - consider using a different type (such as string)")
-    }
-
     if (!writeUnknownTypes) {
       println("can't handle type " + value);
       return Result.FAILED(value)

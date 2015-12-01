@@ -42,6 +42,8 @@ import org.elasticsearch.hadoop.mr.HadoopCfgUtils;
 import org.elasticsearch.hadoop.mr.LinkedMapWritable;
 import org.elasticsearch.hadoop.mr.MultiOutputFormat;
 import org.elasticsearch.hadoop.mr.RestUtils;
+import org.elasticsearch.hadoop.util.StringUtils;
+import org.elasticsearch.hadoop.util.TestSettings;
 import org.elasticsearch.hadoop.util.TestUtils;
 import org.elasticsearch.hadoop.util.WritableUtils;
 import org.junit.FixMethodOrder;
@@ -51,7 +53,7 @@ import org.junit.runners.MethodSorters;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertFalse;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 @RunWith(Parameterized.class)
@@ -118,16 +120,18 @@ public class AbstractMRNewApiSaveTest {
         TextInputFormat.addInputPath(json, new Path(TestUtils.sampleArtistsJson(conf)));
 
         return Arrays.asList(new Object[][] {
-        { standard, "" },
-        { json, "json-" } });
+                { standard, "" },
+                { json, "json-" } });
     }
 
     private String indexPrefix = "";
-    private Configuration config;
+    private final Configuration config;
 
     public AbstractMRNewApiSaveTest(Job job, String indexPrefix) {
         this.config = job.getConfiguration();
         this.indexPrefix = indexPrefix;
+
+        HdpBootstrap.addProperties(config, TestSettings.TESTING_PROPS, false);
     }
 
     @Test
@@ -310,12 +314,25 @@ public class AbstractMRNewApiSaveTest {
 
     @Test
     public void testParentChild() throws Exception {
+        // in ES 2.x, the parent/child relationship needs to be created fresh
+        // hence why we reindex everything again
+
+        String childIndex = indexPrefix + "child";
+        String parentIndex = indexPrefix + "mr_parent";
+
+        //String mapping = "{ \"" + parentIndex + "\" : {}, \"" + childIndex + "\" : { \"_parent\" : { \"type\" : \"" + parentIndex + "\" }}}";
+        //RestUtils.putMapping(indexPrefix + "mroldapi/child", StringUtils.toUTF(mapping));
+        RestUtils.putMapping(indexPrefix + "mrnewapi/child", "org/elasticsearch/hadoop/integration/mr-child.json");
+        RestUtils.putMapping(indexPrefix + "mrnewapi/parent", StringUtils.toUTF("{\"parent\":{}}"));
+
         Configuration conf = createConf();
+        conf.set(ConfigurationOptions.ES_RESOURCE, "mrnewapi/mr-parent");
+        runJob(conf);
+
+        conf = createConf();
         conf.set(ConfigurationOptions.ES_RESOURCE, "mrnewapi/child");
         conf.set(ConfigurationOptions.ES_INDEX_AUTO_CREATE, "no");
         conf.set(ConfigurationOptions.ES_MAPPING_PARENT, "number");
-
-        RestUtils.putMapping(indexPrefix + "mrnewapi/child", "org/elasticsearch/hadoop/integration/mr-child.json");
 
         runJob(conf);
     }

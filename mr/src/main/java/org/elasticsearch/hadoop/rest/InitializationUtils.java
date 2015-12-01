@@ -77,9 +77,10 @@ public abstract class InitializationUtils {
 
         RestClient bootstrap = new RestClient(settings);
         try {
+            String message = "Client-only routing specified but no client nodes with HTTP-enabled available";
             List<String> clientNodes = bootstrap.getHttpClientNodes();
             if (clientNodes.isEmpty()) {
-                throw new EsHadoopIllegalArgumentException("Client-only routing specified but no client nodes with HTTP-enabled were found in the cluster...");
+                throw new EsHadoopIllegalArgumentException(message);
             }
             if (log.isDebugEnabled()) {
                 log.debug(String.format("Found client nodes %s", clientNodes));
@@ -93,12 +94,12 @@ public abstract class InitializationUtils {
             }
 
             if (ddNodes.isEmpty()) {
-                String message = "Client-only routing specified but no client nodes with HTTP-enabled available; ";
+
                 if (settings.getNodesDiscovery()) {
-                    message += String.format("looks like the client nodes discovered have been removed; is the cluster in a stable state? %s", clientNodes);
+                    message += String.format("; looks like the client nodes discovered have been removed; is the cluster in a stable state? %s", clientNodes);
                 }
                 else {
-                    message += String.format("node discovery is disabled and none of nodes specified fits the criterion %s", SettingsUtils.discoveredOrDeclaredNodes(settings));
+                    message += String.format("; node discovery is disabled and none of nodes specified fits the criterion %s", SettingsUtils.discoveredOrDeclaredNodes(settings));
                 }
                 throw new EsHadoopIllegalArgumentException(message);
             }
@@ -107,6 +108,57 @@ public abstract class InitializationUtils {
         } finally {
             bootstrap.close();
         }
+    }
+
+    public static void filterNonDataNodesIfNeeded(Settings settings, Log log) {
+        if (!settings.getNodesDataOnly() || settings.getNodesClientOnly()) {
+            return;
+        }
+
+        RestClient bootstrap = new RestClient(settings);
+        try  {
+            String message = "No data nodes with HTTP-enabled available";
+            List<String> dataNodes = bootstrap.getHttpDataNodes();
+            if (dataNodes.isEmpty()) {
+                throw new EsHadoopIllegalArgumentException(message);
+            }
+            if (log.isDebugEnabled()) {
+                log.debug(String.format("Found data nodes %s", dataNodes));
+            }
+
+            List<String> ddNodes = SettingsUtils.discoveredOrDeclaredNodes(settings);
+            // remove non-data nodes
+            ddNodes.retainAll(dataNodes);
+            if (log.isDebugEnabled()) {
+                log.debug(String.format("Filtered discovered only nodes %s to data-only %s", SettingsUtils.discoveredOrDeclaredNodes(settings), ddNodes));
+            }
+
+            if (ddNodes.isEmpty()) {
+                if (settings.getNodesDiscovery()) {
+                    message += String.format("; looks like the data nodes discovered have been removed; is the cluster in a stable state? %s", dataNodes);
+                }
+                else {
+                    message += String.format("; node discovery is disabled and none of nodes specified fits the criterion %s", SettingsUtils.discoveredOrDeclaredNodes(settings));
+                }
+                throw new EsHadoopIllegalArgumentException(message);
+            }
+
+            SettingsUtils.setDiscoveredNodes(settings, dataNodes);
+        } finally {
+            bootstrap.close();
+        }
+    }
+
+    public static void validateSettings(Settings settings) {
+        // wan means all node restrictions are off the table
+        if (settings.getNodesWANOnly()) {
+            Assert.isTrue(!settings.getNodesDiscovery(), "Discovery cannot be enabled when running in WAN mode");
+            Assert.isTrue(!settings.getNodesClientOnly(), "Client-only nodes cannot be enabled when running in WAN mode");
+            Assert.isTrue(!settings.getNodesDataOnly(), "Data-only nodes cannot be enabled when running in WAN mode");
+        }
+
+        // pick between data or client only nodes
+        Assert.isTrue(!(settings.getNodesClientOnly() && settings.getNodesDataOnly()), "Use either client-only or data-only nodes but not both");
     }
 
     public static String discoverEsVersion(Settings settings, Log log) {
@@ -125,6 +177,11 @@ public abstract class InitializationUtils {
             String esVersion = bootstrap.esVersion();
             if (log.isDebugEnabled()) {
                 log.debug(String.format("Discovered Elasticsearch version [%s]", esVersion));
+            }
+            // validate version (make sure it's running against ES 1.x or 2.x)
+
+            if (!(esVersion.startsWith("1.") || esVersion.startsWith("2."))) {
+                throw new EsHadoopIllegalArgumentException("Unsupported/Unknown Elasticsearch version " + esVersion);
             }
             settings.setProperty(InternalConfigurationOptions.INTERNAL_ES_VERSION, esVersion);
             return esVersion;

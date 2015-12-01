@@ -16,23 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.elasticsearch.repositories.hdfs;
+package org.elasticsearch.spark.sql;
 
-import org.elasticsearch.common.inject.AbstractModule;
-import org.elasticsearch.index.snapshots.IndexShardRepository;
-import org.elasticsearch.index.snapshots.blobstore.BlobStoreIndexShardRepository;
-import org.elasticsearch.repositories.Repository;
+import org.junit.Test;
 
-public class HdfsRepositoryModule extends AbstractModule {
+import static org.junit.Assert.*;
 
-    public HdfsRepositoryModule() {
-        super();
-    }
+public class UtilsTest {
 
-    @Override
-    protected void configure() {
-        bind(Repository.class).to(HdfsRepository.class).asEagerSingleton();
-        bind(IndexShardRepository.class).to(BlobStoreIndexShardRepository.class).asEagerSingleton();
+    @Test
+    public void testCamelCase() throws Exception {
+        assertEquals("foo.bar", Utils.camelCaseToDotNotation("foo.bar"));
+        assertEquals("foo.bar", Utils.camelCaseToDotNotation("fooBar"));
+        assertEquals("foo.bar", Utils.camelCaseToDotNotation("fooBAr"));
+        assertEquals("foo", Utils.camelCaseToDotNotation("FOO"));
+        assertEquals("foo.bar", Utils.camelCaseToDotNotation("FOO.BAR"));
+        assertEquals("foo.bar", Utils.camelCaseToDotNotation("FOO.BAR"));
+        assertEquals("es.port", Utils.camelCaseToDotNotation("esPort"));
     }
 }
-

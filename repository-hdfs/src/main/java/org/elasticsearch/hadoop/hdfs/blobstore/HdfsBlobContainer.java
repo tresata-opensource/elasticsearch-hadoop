@@ -21,6 +21,10 @@ package org.elasticsearch.hadoop.hdfs.blobstore;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
@@ -30,7 +34,6 @@ import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.support.AbstractBlobContainer;
 import org.elasticsearch.common.blobstore.support.PlainBlobMetaData;
-import org.elasticsearch.common.collect.ImmutableMap;
 
 public class HdfsBlobContainer extends AbstractBlobContainer {
 
@@ -46,58 +49,65 @@ public class HdfsBlobContainer extends AbstractBlobContainer {
     @Override
     public boolean blobExists(String blobName) {
         try {
-            return blobStore.fileSystem().exists(new Path(path, blobName));
+            return blobStore.fileSystemFactory().getFileSystem().exists(new Path(path, blobName));
         } catch (Exception e) {
             return false;
         }
     }
 
     @Override
-    public boolean deleteBlob(String blobName) throws IOException {
-        return blobStore.fileSystem().delete(new Path(path, blobName), true);
+    public void deleteBlob(String blobName) throws IOException {
+        blobStore.fileSystemFactory().getFileSystem().delete(new Path(path, blobName), true);
     }
 
+    @Override
+    public void move(String sourceBlobName, String targetBlobName) throws IOException {
+        if (!blobStore.fileSystemFactory().getFileSystem().rename(new Path(path, sourceBlobName), new Path(path, targetBlobName))) {
+            throw new IOException(String.format(Locale.ROOT, "can not move blob from [%s] to [%s]", sourceBlobName, targetBlobName));
+        }
+    }
 
     @Override
     public InputStream openInput(String blobName) throws IOException {
         // FSDataInputStream does buffering internally
-        return blobStore.fileSystem().open(new Path(path, blobName), blobStore.bufferSizeInBytes());
+        return blobStore.fileSystemFactory().getFileSystem().open(new Path(path, blobName), blobStore.bufferSizeInBytes());
     }
 
     @Override
     public OutputStream createOutput(String blobName) throws IOException {
         Path file = new Path(path, blobName);
         // FSDataOutputStream does buffering internally
-        return blobStore.fileSystem().create(file, true, blobStore.bufferSizeInBytes());
+        return blobStore.fileSystemFactory().getFileSystem().create(file, true, blobStore.bufferSizeInBytes());
     }
 
     @Override
-    public ImmutableMap<String, BlobMetaData> listBlobsByPrefix(final @Nullable String blobNamePrefix) throws IOException {
-        FileStatus[] files = blobStore.fileSystem().listStatus(path, new PathFilter() {
+    public Map<String, BlobMetaData> listBlobsByPrefix(final @Nullable String blobNamePrefix) throws IOException {
+        FileStatus[] files = blobStore.fileSystemFactory().getFileSystem().listStatus(path, new PathFilter() {
             @Override
             public boolean accept(Path path) {
                 return path.getName().startsWith(blobNamePrefix);
             }
         });
         if (files == null || files.length == 0) {
-            return ImmutableMap.of();
+            return Collections.emptyMap();
         }
-        ImmutableMap.Builder<String, BlobMetaData> builder = ImmutableMap.builder();
+        Map<String, BlobMetaData> map = new LinkedHashMap<String, BlobMetaData>();
         for (FileStatus file : files) {
-            builder.put(file.getPath().getName(), new PlainBlobMetaData(file.getPath().getName(), file.getLen()));
+            map.put(file.getPath().getName(), new PlainBlobMetaData(file.getPath().getName(), file.getLen()));
         }
-        return builder.build();
+        return Collections.unmodifiableMap(map);
     }
 
-    public ImmutableMap<String, BlobMetaData> listBlobs() throws IOException {
-        FileStatus[] files = blobStore.fileSystem().listStatus(path);
+    @Override
+    public Map<String, BlobMetaData> listBlobs() throws IOException {
+        FileStatus[] files = blobStore.fileSystemFactory().getFileSystem().listStatus(path);
         if (files == null || files.length == 0) {
-            return ImmutableMap.of();
+            return Collections.emptyMap();
         }
-        ImmutableMap.Builder<String, BlobMetaData> builder = ImmutableMap.builder();
+        Map<String, BlobMetaData> map = new LinkedHashMap<String, BlobMetaData>();
         for (FileStatus file : files) {
-            builder.put(file.getPath().getName(), new PlainBlobMetaData(file.getPath().getName(), file.getLen()));
+            map.put(file.getPath().getName(), new PlainBlobMetaData(file.getPath().getName(), file.getLen()));
         }
-        return builder.build();
+        return Collections.unmodifiableMap(map);
     }
 }

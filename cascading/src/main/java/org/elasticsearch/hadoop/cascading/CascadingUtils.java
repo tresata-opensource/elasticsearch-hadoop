@@ -59,9 +59,11 @@ public abstract class CascadingUtils {
     static Settings addDefaultsToSettings(Properties flowProperties, Properties tapProperties, Log log) {
         Settings settings = HadoopSettingsManager.loadFrom(CascadingUtils.extractOriginalProperties(flowProperties)).merge(tapProperties);
 
+        InitializationUtils.validateSettings(settings);
+        InitializationUtils.discoverEsVersion(settings, log);
         InitializationUtils.discoverNodesIfNeeded(settings, log);
         InitializationUtils.filterNonClientNodesIfNeeded(settings, log);
-        InitializationUtils.discoverEsVersion(settings, log);
+        InitializationUtils.filterNonDataNodesIfNeeded(settings, log);
 
         InitializationUtils.setValueWriterIfNotSet(settings, CascadingValueWriter.class, log);
         InitializationUtils.setValueReaderIfNotSet(settings, JdkValueReader.class, log);

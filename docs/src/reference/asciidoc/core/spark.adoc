@@ -60,9 +60,11 @@ $ ./bin/spark-submit --conf spark.es.resource<1>=index/type ...
 ==== Writing data to {es}
 
 With {eh}, any +RDD+ can be saved to {es} as long as its content can be translated into documents. In practice this means the +RDD+ type needs to be a +Map+ (whether a Scala or a Java one), a http://docs.oracle.com/javase/tutorial/javabeans/[+JavaBean+] or a Scala http://docs.scala-lang.org/tutorials/tour/case-classes.html[case class]. When that is not the case, one can easily _transform_ the data
-in Spark or plug-in their own customer <<configuration-serialization,+ValueWriter+>>.
+in Spark or plug-in their own custom <<configuration-serialization,+ValueWriter+>>.
 
-.Scala
+[float]
+[[spark-write-scala]]
+===== Scala
 
 When using Scala, simply import the `org.elasticsearch.spark` package which, through the http://www.artima.com/weblogs/viewpost.jsp?thread=179766[__pimp my library__] pattern, enriches the  _any_ +RDD+ API with `saveToEs` methods:
 
@@ -105,7 +107,7 @@ case class Trip(departure: String, arrival: String)               <2>
 val upcomingTrip = Trip("OTP", "SFO")
 val lastWeekTrip = Trip("MUC", "OTP")
 
-val +RDD+ = sc.makeRDD(Seq(upcomingTrip, lastWeekTrip))           <3>
+val rdd = sc.makeRDD(Seq(upcomingTrip, lastWeekTrip))             <3>
 EsSpark.saveToEs(rdd, "spark/docs")                               <4>
 ----
 
@@ -121,9 +123,11 @@ For cases where the id (or other metadata fields like +ttl+ or +timestamp+) of t
 EsSpark.saveToEs(rdd, "spark/docs", Map("es.mapping.id" -> "id"))
 ----
 
-.Java
+[float]
+[[spark-write-java]]
+===== Java
 
-Java users have a dedicated class that provides a similar functionality to +EsSpark+, namely +JavaEsSpark+ in the +org.elasticsearch.hadoop.spark.rdd.api.java+ (a package similar to Spark's https://spark.apache.org/docs/1.0.1/api/java/index.html?org/apache/spark/api/java/package-summary.html[Java API]):
+Java users have a dedicated class that provides a similar functionality to +EsSpark+, namely +JavaEsSpark+ in the +org.elasticsearch.spark.rdd.api.java+ (a package similar to Spark's https://spark.apache.org/docs/1.0.1/api/java/index.html?org/apache/spark/api/java/package-summary.html[Java API]):
 
 [source,java]
 ----
@@ -131,7 +135,7 @@ import org.apache.spark.api.java.JavaSparkContext;                              
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.SparkConf;
 
-import org.elasticsearch.spark.rdd.java.api.JavaEsSpark;                        <2>
+import org.elasticsearch.spark.rdd.api.java.JavaEsSpark;                        <2>
 ...
 
 SparkConf conf = ...
@@ -204,21 +208,25 @@ JavaEsSpark.saveToEs(javaRDD, "spark/docs", ImmutableMap.of("es.mapping.id", "id
 For cases where the data in the `RDD` is already in JSON, {eh} allows direct indexing _without_ applying any transformation; the data is taken as is and sent directly to {es}. As such, in this case, {eh} expects either an +RDD+
 containing +String+ or byte arrays (+byte[]+/+Array[Byte]+), assuming each entry represents a JSON document. If the +RDD+ does not have the proper signature, the +saveJsonToEs+ methods cannot be applied (in Scala they will not be available).
 
-.Scala
+[float]
+[[spark-write-json-scala]]
+===== Scala
 
 [source,scala]
 ----
-val json1 = "{\"reason\" : \"business\",\"airport\" : \"SFO\"}"      <1>
-val json2 = "{\"participants\" : 5,\"airport\" : \"OTP\"}"
+val json1 = """{"reason" : "business", "airport" : "SFO"}"""      <1>
+val json2 = """{"participants" : 5, "airport" : "OTP"}"""
 
 new SparkContext(conf).makeRDD(Seq(json1, json2))
-                                   .saveJsonToEs("spark/json-trips") <2>
+                      .saveJsonToEs("spark/json-trips") <2>
 ----
 
 <1> example of an entry within the +RDD+ - the JSON is _written_ as is, without any transformation
 <2> index the JSON data through the dedicated +saveJsonToEs+ method
 
-.Java
+[float]
+[[spark-write-json-java]]
+===== Java
 
 [source,java]
 ----
@@ -240,7 +248,9 @@ JavaEsSpark.saveJsonToEs(stringRDD, "spark/json-trips");             <3>
 
 For cases when the data being written to {es} needs to be indexed under different buckets (based on the data content) one can use the `es.resource.write` field which accepts pattern that are resolved from the document content, at runtime. Following the aforementioned <<cfg-multi-writes,media example>>, one could configure it as follows:
 
-.Scala
+[float]
+[[spark-write-dyn-scala]]
+===== Scala
 
 [source,scala]
 ----
@@ -256,7 +266,9 @@ sc.makeRDD(Seq(game, book, cd)).saveToEs("my-collection/{media-type}")  <2>
 
 For each document/object about to be written, {eh} will extract the +media_type+ field and use its value to determine the target resource.
 
-.Java
+[float]
+[[spark-write-dyn-java]]
+===== Java
 
 As expected, things in Java are strikingly similar:
 
@@ -285,7 +297,9 @@ The metadata is described through the +Metadata+ Java http://docs.oracle.com/jav
 Thus an +RDD+ keys can be a +Map+ containing the +Metadata+ for each document and its associated values. If +RDD+ key is not of type +Map+, {eh} will consider the object as representing the document id and use it accordingly.
 This sounds more complicated than it is, so let us see some examples.
 
-.Scala
+[float]
+[[spark-write-meta-scala]]
+===== Scala
 
 Pair ++RDD++s, or simply put ++RDD++s with the signature +RDD[(K,V)]+ can take advantage of the +saveToEsWithMeta+ methods that are available either through the _implicit_ import of +org.elasticsearch.spark+ package or +EsSpark+ object.
 To manually specify the id for each document, simply pass in the +Object+ (not of type +Map+) in your +RDD+:
@@ -337,7 +351,9 @@ pairRDD.saveToEsWithMeta(airportsRDD, "airports/2015") <6>
 <5> The metadata and the documents are assembled into a _pair_ +RDD+
 <6> The +RDD+ is saved accordingly using the +saveToEsWithMeta+ method
 
-.Java
+[float]
+[[spark-write-meta-java]]
+===== Java
 
 In a similar fashion, on the Java side, +JavaEsSpark+ provides +saveToEsWithMeta+ methods that are applied to +JavaPairRDD+ (the equivalent in Java of +RDD[(K,V)]+). Thus to save documents based on their ids one can use:
 
@@ -351,7 +367,7 @@ Map<String, ?> jfk = ImmutableMap.of("iata", "JFK", "name", "JFK NYC");
 
 JavaSparkContext jsc = ...
 
-// create a pair +RDD+ between the id and the docs
+// create a pair RDD between the id and the docs
 JavaPairRDD<?, ?> pairRdd = jsc.parallelizePairs<1>(ImmutableList.of(
         new Tuple2<Object, Object>(1, otp),          <2>
         new Tuple2<Object, Object>(2, jfk)));        <3>
@@ -383,7 +399,7 @@ Map<Metadata, Object> sfoMeta<5> = ImmutableMap.<Metadata, Object> of(ID, "2", V
 
 JavaSparkContext jsc = ...
 
-// create a pair +RDD+ between the id and the docs
+// create a pair RDD between the id and the docs
 JavaPairRDD<?, ?> pairRdd = jsc.parallelizePairs<(ImmutableList.of(
         new Tuple2<Object, Object>(otpMeta, otp),    <6>
         new Tuple2<Object, Object>(sfoMeta, sfo)));  <7>
@@ -405,7 +421,9 @@ JavaEsSpark.saveToEsWithMeta(pairRDD, target);       <8>
 
 For reading, one should define the {es} +RDD+ that _streams_ data from {es} to Spark.
 
-.Scala
+[float]
+[[spark-read-scala]]
+===== Scala
 
 Similar to writing, the +org.elasticsearch.spark+ package, enriches the +SparkContext+ API with +esRDD+ methods:
 
@@ -421,7 +439,7 @@ import org.elasticsearch.spark._        <2>
 val conf = ...
 val sc = new SparkContext(conf)         <3>
 
-val +RDD+ = sc.esRDD("radio/artists")     <4>
+val RDD = sc.esRDD("radio/artists")     <4>
 ----
 
 <1> Spark Scala imports
@@ -447,7 +465,9 @@ sc.esRDD("radio/artists", "?q=me*") <1>
 
 The documents from {es} are returned, by default, as a +Tuple2+ containing as the first element the document id and the second element the actual document represented through Scala http://docs.scala-lang.org/overviews/collections/overview.html[collections], namely one `Map[String, Any]`where the keys represent the field names and the value their respective values.
 
-.Java
+[float]
+[[spark-read-java]]
+===== Java
 
 Java users have a dedicated `JavaPairRDD` that works the same as its Scala counterpart however the returned +Tuple2+ values (or second element) returns the documents as native, `java.util` collections.
 
@@ -516,6 +536,63 @@ JavaRDD<Map<String, Object>> filtered = esRDD.filter(doc ->
                                                 doc.contains("mega"));
 ----
 
+[[spark-type-conversion]]
+[float]
+==== Type conversion
+
+IMPORTANT: If automatic index creation is used, please review <<auto-mapping-type-loss,this>> section for more information.
+
+{eh} automatically converts Spark built-in types to {es} {ref}/mapping-types.html[types] (and back) as shown in the table below:
+
+.Scala Types Conversion Table
+
+[cols="^,^",options="header"]
+|===
+| Scala type | {es} type
+
+| `None`            | `null`
+| `Unit`            | `null`
+| `Nil`             | empty `array`
+| `Some[T]`         | `T` according to the table
+| `Map`             | `object`
+| `Traversable`     | `array`
+| __case class__    | `object` (see `Map`)
+| `Product`         | `array`
+
+|===
+
+in addition, the following _implied_ conversion applies for Java types:
+
+.Java Types Conversion Table
+
+[cols="^,^",options="header"]
+|===
+| Java type | {es} type
+
+| `null`                | `null`
+| `String`              | `string`
+| `Boolean`             | `boolean`
+| `Byte`                | `byte`
+| `Short`               | `short`
+| `Integer`             | `int`
+| `Long`                | `long`
+| `Double`              | `double`
+| `Float`               | `float`
+| `Number`              | `float` or `double` (depending on size)
+| `java.util.Calendar`  | `date`  (`string` format)
+| `java.util.Date`      | `date`  (`string` format)
+| `java.util.Timestamp` | `date`  (`string` format)
+| `byte[]`              | `string` (BASE64)
+| `Object[]`            | `array`
+| `Iterable`            | `array`
+| `Map`                 | `object`
+| __Java Bean__         | `object` (see `Map`)
+
+|===
+
+The conversion is done as a _best_ effort; built-in Java and Scala types are guaranteed to be properly converted, however there are no guarantees for user types whether in Java or Scala. As mentioned in the tables above, when a `case` class is encountered in Scala or `JavaBean` in Java, the converters will try to +unwrap+ its content and save it as an `object`. Note this works only for top-level user objects - if the user object has other user objects nested in, the conversion is likely to fail since the converter does not perform nested +unwrapping+.
+This is done on purpose since the converter has to _serialize_ and _deserialize_ the data and user types introduce ambiguity due to data loss; this can be addressed through some type of mapping however that takes the project way to close to the realm of ORMs and arguably introduces too much complexity for little to now gain; thanks to the processing functionality in Spark and the plugability in {eh} one can easily transform objects into other types, if needed with minimal effort and maximum control.
+
 [[spark-sql]]
 [float]
 === Spark SQL support
@@ -536,26 +613,28 @@ structures) is _not_ supported and will cause problems. For such cases, use ++Pa
 [[spark-sql-versions]]
 ==== Supported Spark SQL versions
 
-Spark SQL is a young component, going through significant changes between releases. Spark SQL became a stable component in version 1.3, however it is https://spark.apache.org/docs/latest/sql-programming-guide.html#migration-guide[*not* backwards compatible] with the previous releases. {eh} supports both version Spark SQL 1.1-1.2 and 1.3 through two different jars:
-+elasticsearch-spark-<version>.jar+ and +elasticsearch-hadoop-<version>.jar+ support Spark SQL 1.3 while +elasticsearch-spark-1.2-<version>.jar+ supports Spark SQL 1.1 and 1.2. In other words, if you are not using Spark SQL 1.3, append the +-1.2+ suffix to the {eh} artifact id.
+Spark SQL is a young component, going through significant changes between releases. Spark SQL became a stable component in version 1.3, however it is https://spark.apache.org/docs/latest/sql-programming-guide.html#migration-guide[*not* backwards compatible] with the previous releases. {eh} supports both version Spark SQL 1.1-1.2 and 1.3 (and higher) through two different jars:
++elasticsearch-spark-<version>.jar+ and +elasticsearch-hadoop-<version>.jar+ support Spark SQL 1.3 (or higher) while +elasticsearch-spark-1.2-<version>.jar+ supports Spark SQL 1.1 and 1.2. In other words, if you are not using Spark SQL 1.3, append the +-1.2+ suffix to the {eh} artifact id.
 
 Spark SQL support is available under +org.elasticsearch.spark.sql+ package.
 
 .API differences
 From the {eh} user perspectives, the differences between Spark SQL 1.3 and its previous versions are fairly trivial. This https://spark.apache.org/docs/latest/sql-programming-guide.html#migration-guide[document] describes at length the differences which are briefly mentioned below:
 
-+DataFrame+ vs +SchemaRDD+:: The core unit of Spark SQL in 1.3 is a +DataFrame+ while previously it was a +SchemaRDD+
-Unified API vs dedicated Java/Scala APIs:: In Spark SQL 1.3 there is only one API for both Java and Scala, previous versions had dedicated APIs in particular with regards to data types.
++DataFrame+ vs +SchemaRDD+:: The core unit of Spark SQL in 1.3+ is a +DataFrame+ while previously it was a +SchemaRDD+
+Unified API vs dedicated Java/Scala APIs:: In Spark SQL 1.3+ there is only one API for both Java and Scala, previous versions had dedicated APIs in particular with regards to data types.
 
-The documentation below will focus on Spark SQL 1.3 however accompanies each example with the suitable Spark SQL 1.1-1.2 code.
+The documentation below will focus on Spark SQL 1.3+ however accompanies each example with the suitable Spark SQL 1.1-1.2 code.
 
 [float]
 [[spark-sql-write]]
-==== Writing +DataFrame+ (Spark SQL 1.3) to {es}
+==== Writing +DataFrame+ (Spark SQL 1.3+) to {es}
 
 With {eh}, ++DataFrame++s can be indexed to {es}.
 
-.Scala
+[float]
+[[spark-sql-write-scala]]
+===== Scala
 
 In Scala, simply import +org.elasticsearch.spark.sql+ package which enriches the given +DataFrame+ class with +saveToEs+ methods; while these have the same signature as the +org.elasticsearch.spark+ package, they are designed for +DataFrame+ implementations:
 
@@ -590,7 +669,9 @@ people.saveToEs("spark/people")           <4>
 <3> Read a text file as _normal_ +RDD+ and map it to a +DataFrame+ (using the +Person+ case class)
 <4> Index the resulting +DataFrame+ to {es} through the +saveToEs+ method
 
-.Java
+[float]
+[[spark-sql-write-java]]
+===== Java
 
 In a similar fashion, for Java usage the dedicated package +org.elasticsearch.spark.sql.java.api+ provides similar functionality through the +JavaEsSpark SQL+ :
 
@@ -628,7 +709,10 @@ IMPORTANT: For maximum control over the mapping of your +SchemaRDD+ in {es}, it 
 
 When dealing with Spark SQL 1.1/1.2 simply interchange +DataFrame+ with +SchemaRDD+ as the Java and Scala APIs are the same.
 
-.Scala
+[float]
+[[spark-sql-write-12-scala]]
+===== Scala
+
 [source,scala]
 ----
 // reusing the example from Spark SQL documentation
@@ -659,7 +743,9 @@ people.saveToEs("spark/people")           <4>
 <3> Read a text file as _normal_ +RDD+ and map it to a +SchemaRDD+ (using the +Person+ case class)
 <4> Index the resulting +SchemaRDD+ to {es} through the +saveToEs+ method
 
-.Java
+[float]
+[[spark-sql-write-12-java]]
+===== Java
 
 As expected, the Java example is identical :
 
@@ -718,6 +804,7 @@ When using Spark SQL 1.3, {eh} allows access to {es} through +SQLContext+ +load+
 [source,scala]
 ----
 val sql = new SQLContext...
+// Spark 1.3 style
 val df = sql.load<1>("spark/index"<2>, "org.elasticsearch.spark.sql"<3>)
 ----
 
@@ -725,7 +812,142 @@ val df = sql.load<1>("spark/index"<2>, "org.elasticsearch.spark.sql"<3>)
 <2> path or resource to load - in this case the index/type in {es}
 <3> the data source provider - +org.elasticsearch.spark.sql+
 
-Once created, the +DataFrame+ can be accessed freely to manipulate the data.
+In Spark 1.4, one would use the following similar API calls:
+
+[source,scala]
+----
+// Spark 1.4 style
+val df = sql.read()<1>.format("org.elasticsearch.spark.sql"<2>).load("spark/index"<3>)
+----
+
+<1> +SQLContext+ _experimental_ +read+ method for arbitrary data sources
+<2> the data source provider - +org.elasticsearch.spark.sql+
+<3> path or resource to load - in this case the index/type in {es}
+
+Whatever API is used, once created, the +DataFrame+ can be accessed freely to manipulate the data.
+
+The __sources__ declaration also allows specific options to be passed in, namely:
+
+[cols="^,^,^",options="header"]
+|===
+| Name | Default value| Description
+
+| `path`           | {es} index/type    | _required_
+| `pushdown`       | `true`             | Whether to translate (__push-down__) Spark SQL into {es} Query DSL
+| `strict`         | `false`            | Whether to use _exact_ (not analyzed) matching or not (analyzed)
+
+|===
+
+Both options are explained in the next section.
+To specify the options (including the generic {eh} ones), one simply passes a +Map+ to the aforementioned methods:
+
+For example:
+
+[source,scala]
+----
+val sql = new SQLContext...
+// options for Spark 1.3 need to include the target path/resource
+val options13 = Map("path" -> "spark/index",
+                    "pushdown"<1> -> "true",
+                    "es.nodes"<2> -> "someNode", "es.port" -> "9200")
+
+// Spark 1.3 style
+val spark13DF = sql.load("org.elasticsearch.spark.sql", options13<3>)
+
+// options for Spark 1.4 - the path/resource is specified separately
+val options = Map("pushdown"<1> -> "true", "es.nodes"<2> -> "someNode", "es.port" -> "9200")
+
+// Spark 1.4 style
+val spark14DF = sql.read().format("org.elasticsearch.spark.sql")
+                          .options<3>(options).load("spark/index")
+----
+
+<1> `pushdown` option - specific to Spark data sources
+<2> +es.nodes+ configuration option
+<3> pass the options when definition/loading the source
+
+
+[source,scala]
+----
+sqlContext.sql(
+   "CREATE TEMPORARY TABLE myIndex    " + <1>
+   "USING org.elasticsearch.spark.sql " + <2>
+   "OPTIONS (<3> resource 'spark/index', nodes 'spark/index')" ) "
+----
+
+<1> Spark's temporary table name
+<2> +USING+ clause identifying the data source provider, in this case +org.elasticsearch.spark.sql+
+<3> {eh} <<configuration,configuration options>>, the mandatory one being +resource+. The +es.+ prefix is fixed due to the SQL parser
+
+Do note that due to the SQL parser, the +.+ (among other common characters used for delimiting) is not allowed; the connector tries to work around it by append the +es.+ prefix automatically however this works only for specifying the configuration options with only one +.+ (like +es.nodes+ above). Because of this, if properties with multiple +.+ are needed, one should use the +SQLContext.load+ or +SQLContext.read+ methods above and pass the properties as a +Map+.
+
+[[spark-pushdown]]
+[float]
+==== Push-Down operations
+
+NOTE: Available only in Spark 1.3 or higher
+
+An important _hidden_ feature of using {eh} as a Spark `source` is that the connector understand the operations performed within the `DataFrame`/SQL and, by default, will _translate_ them into the appropriate https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html[QueryDSL]. In other words, the connector _pushes_ down the operations directly at the source, where the data is efficiently filtered out so that _only_ the required data is streamed back to Spark.
+This significantly increases the queries performance and minimizes the CPU, memory and I/O on both Spark and {es} clusters as only the needed data is returned (as oppose to returning the data in bulk only to be processed and discarded by Spark).
+Note the push down operations apply even when one specifies a query - the connector will _enhance_ it according to the specified SQL.
+
+As a side note, {eh} supports _all_ the `Filter`s available in Spark (1.3.0 to 1.4.0) while retaining backwards binary-compatibility with Spark 1.3.0, pushing down to full extent the SQL operations to {es} without any user interference.
+
+To wit, consider the following Spark SQL:
+
+[source,scala]
+----
+// as a DataFrame
+val df = sqlContext.read().format("org.elasticsearch.spark.sql").load("spark/trips")
+
+df.printSchema()
+// root
+//|-- departure: string (nullable = true)
+//|-- arrival: string (nullable = true)
+//|-- days: long (nullable = true)
+
+val filter = df.filter(df("arrival").equalTo("OTP").and(df("days").gt(3))
+----
+
+or in pure SQL:
+
+[source,sql]
+----
+CREATE TEMPORARY TABLE trips USING org.elasticsearch.spark.sql OPTIONS (path "spark/trips")
+SELECT departure FROM trips WHERE arrival = "OTP" and days > 3
+----
+
+The connector translates the query into:
+
+[source,json]
+----
+{
+  "query" : {
+    "filtered" : {
+      "query" : {
+        "match_all" : {}
+
+      },
+      "filter" : {
+        "and" : [{
+            "query" : {
+              "match" : {
+                "arrival" : "OTP"
+              }
+            }
+          }, {
+            "days" : {
+              "gt" : 3
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+----
+
+Further more, the pushdown filters can work on +analyzed+ terms (the default) or can be configured to be _strict_ and provide +exact+ matches (work only on ++not-analyzed++ fields). Unless one manually specifies the mapping, it is highly recommended to leave the defaults as they are.  This and other topics are discussed at length in the {es} https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-term-query.html[Reference Documentation].
 
 [[spark-data-sources-12]]
 [float]
@@ -743,8 +965,8 @@ sqlContext.sql(
 
 <1> Spark's temporary table name
 <2> +USING+ clause identifying the data source provider, in this case +org.elasticsearch.spark.sql+
-<3> {eh} <<configuration,configuration options>>, the mandatory one being +resource+. One can use the +es_+ prefix or skip it for convenient.
-<4> Since using the +.+ can cause syntax exceptions, one should replace it instead with +_+ (underline). Thus, in this example +es.scroll.size+ becomes +scroll_size+ (as the leading +es+ can be removed)
+<3> {eh} <<configuration,configuration options>>, the mandatory one being +resource+. One can use the +es+ prefix or skip it for convenient.
+<4> Since using +.+ can cause syntax exceptions, one should replace it instead with +_+ style. Thus, in this example +es.scroll.size+ becomes +scroll_size+ (as the leading +es+ can be removed). Do note this only work in Spark 1.3 as the Spark 1.4 has a stricter parser. See the chapter above for more information.
 
 Once defined, the schema is picked up automatically. So one can issue queries, right away:
 
@@ -768,7 +990,9 @@ it knows only the +name+ and +id+ fields are required (the first to be returned 
 
 As you might have guessed, one can define a +DataFrame+ backed by {es} documents. Or even better, have them backed by a query result, effectively creating dynamic, real-time _views_ over your data.
 
-.Scala
+[float]
+[[spark-sql-read-scala]]
+===== Scala
 
 Through the +org.elasticsearch.spark.sql+ package, +esDF+ methods are available on the +SQLContext+ API:
 
@@ -807,9 +1031,29 @@ val smiths = sqlContext.esDF("spark/people","?q=Smith" <1>)
 
 <1> {es} query whose results comprise the +DataFrame+
 
-.Java
+.Controlling the +DataFrame+ schema
 
-For Java users, a dedicated API exists through +JavaEsSpark SQL+. It is stickingly similar to +EsSpark SQL+ however it allows configuration options to be passed in through Java collections instead of Scala ones; other than that using the two is exactly the same:
+In some cases, especially when the index in {es} contains a lot of fields, it is desireable to create a +DataFrame+ that contains only a _subset_ of them. While one can modify the +DataFrame+ (by working on its backing +RDD+) through the official Spark API or through dedicated queries, {eh} allows the user to specify what fields to include and exclude from {es} when creating the +DataFrame+.
+
+Through +es.read.field.include+ and +es.read.field.exclude+ properties, one can indicate what fields to include or exclude from the index mapping. The syntax is similar to that of {es} {ref}/search-request-source-filtering.html[include/exclude]. Multiple values can be specified by using a comma. By default, no value is specified meaning all properties/fields are included and no properties/fields are excluded.
+
+For example:
+[source,ini]
+----
+# include
+es.read.field.include = *name, address.*
+# exclude
+es.read.field.exclude = *.created
+----
+
+IMPORTANT: Due to the way SparkSQL works with a +DataFrame+ schema, {eh} needs to be aware of what fields are returned from {es} _before_ executing the actual queries. While one can restrict the fields manually through the underlying {es} query, {eh} is unaware of this and the results are likely to be different or worse, errors will occur. Use the properties above instead, which {es} will properly use alongside the user query.
+
+
+[float]
+[[spark-sql-read-java]]
+===== Java
+
+For Java users, a dedicated API exists through +JavaEsSpark SQL+. It is strikingly similar to +EsSpark SQL+ however it allows configuration options to be passed in through Java collections instead of Scala ones; other than that using the two is exactly the same:
 
 [source,java]
 ----
@@ -840,7 +1084,9 @@ DataFrame people = JavaEsSparkSQL.esDF(sql, "spark/people", "?q=Smith"  <1>);
 
 And again, if you are using Spark SQL 1.1/1.2 simply interchange +DataFrame+ with +SchemaRDD+ and +esDF+ with +esRDD+:
 
-.Scala
+[float]
+[[spark-sql-read-12-scala]]
+===== Scala
 
 Through the +org.elasticsearch.spark.sql+ package, +esRDD+ methods are available on the +SQLContext+ API:
 
@@ -879,7 +1125,9 @@ val smiths = sqlContext.esRDD("spark/people","?q=Smith" <1>)
 
 <1> {es} query whose results comprise the +RDD+
 
-.Java
+[float]
+[[spark-sql-read-12-java]]
+===== Java
 
 [source,java]
 ----
@@ -903,6 +1151,44 @@ JavaSchemaRDD people = JavaEsSparkSQL.esRDD(jsql, "spark/people", "?q=Smith" <1>
 ----
 
 <1> {es} query backing the {eh} +SchemaRDD+
+
+[[spark-sql-type-conversion]]
+[float]
+==== Spark SQL Type conversion
+
+IMPORTANT: If automatic index creation is used, please review <<auto-mapping-type-loss,this>> section for more information.
+
+{eh} automatically converts Spark built-in types to {es} {ref}/mapping-types.html[types] (and back) as shown in the table below:
+
+While Spark SQL https://spark.apache.org/docs/latest/sql-programming-guide.html#data-types[++DataType++s] have an equivalent in both Scala and Java and thus the <<spark-type-conversion, RDD>> conversion can apply, there are slightly different semantics - in particular with the `java.sql` types due to the way Spark SQL handles them:
+
+.Spark SQL 1.3+ Conversion Table
+
+[cols="^,^",options="header"]
+|===
+| Spark SQL `DataType` | {es} type
+
+| `null`               | `null`
+| `ByteType`           | `byte`
+| `ShortType`          | `short`
+| `IntegerType`        | `int`
+| `LongType`           | `long`
+| `FloatType`          | `float`
+| `DoubleType`         | `double`
+| `StringType`         | `string`
+| `BinaryType`         | `string` (BASE64)
+| `BooleanType`        | `boolean`
+| `TimestampType`      | `long` (unix time)
+| `ArrayType`          | `array`
+| `MapType`            | `object`
+| `StructType`         | `object`
+
+2+h| Available only in Spark 1.2+
+
+| `DateType`           | `date` (`string` format)
+
+|===
+
 
 [[spark-mr]]
 [float]
@@ -1025,3 +1311,32 @@ val docCount = esRDD.count();
 <3> Setup the query (optional)
 <4> Create a Spark +RDD+ on top of {es} through `EsInputFormat`
 
+[[spark-python]]
+[float]
+=== Using the connector from PySpark
+
+Thanks to its <<mapreduce, {mr}>> layer, {eh} can be used from PySpark as well to both read and write data to {es}.
+To wit, below is a snippet from the https://spark.apache.org/docs/1.5.1/programming-guide.html#external-datasets[Spark documentation] (make sure to switch to the Python snippet):
+
+[source, python]
+----
+$ ./bin/pyspark --driver-class-path=/path/to/elasticsearch-hadoop.jar
+>>> conf = {"es.resource" : "index/type"}   # assume Elasticsearch is running on localhost defaults
+>>> rdd = sc.newAPIHadoopRDD("org.elasticsearch.hadoop.mr.EsInputFormat",\
+    "org.apache.hadoop.io.NullWritable", "org.elasticsearch.hadoop.mr.LinkedMapWritable", conf=conf)
+>>> rdd.first()         # the result is a MapWritable that is converted to a Python dict
+(u'Elasticsearch ID',
+ {u'field1': True,
+  u'field2': u'Some Text',
+  u'field3': 12345})
+----
+
+Also, the SQL loader can be used as well:
+
+[source, python]
+----
+from pyspark.sql import SQLContext
+sqlContext = SQLContext(sc)
+df = sqlContext.read.format("org.elasticsearch.spark.sql").load("index/type")
+df.printSchema()
+----

@@ -35,7 +35,7 @@ import org.junit.runners.MethodSorters;
 import static org.elasticsearch.hadoop.integration.yarn.YarnSuite.*;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
-@Ignore("disabled for now until figuring why the CI env fails...")
+@Ignore
 public class YarnTest {
 
     private YarnBootstrap bootstrap;

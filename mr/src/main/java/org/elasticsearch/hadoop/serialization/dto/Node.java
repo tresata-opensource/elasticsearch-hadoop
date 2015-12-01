@@ -21,6 +21,9 @@ package org.elasticsearch.hadoop.serialization.dto;
 import java.io.Serializable;
 import java.util.Map;
 
+import org.elasticsearch.hadoop.util.StringUtils;
+import org.elasticsearch.hadoop.util.StringUtils.IpAndPort;
+
 public class Node implements Serializable {
 
     private String id;
@@ -28,8 +31,18 @@ public class Node implements Serializable {
     private boolean hasHttp;
     private String ipAddress;
     private int httpPort;
-    private Map<String, Object> attributes;
     private boolean isClient = false;
+    private boolean isData = true;
+
+    public Node(String id, String name, IpAndPort ipAndPort) {
+        this.id = id;
+        this.name = name;
+        this.hasHttp = true;
+        this.ipAddress = ipAndPort.ip;
+        this.httpPort = ipAndPort.port;
+        this.isData = false;
+        this.isClient = false;
+    }
 
     public Node(String id, Map<String, Object> data) {
         this.id = id;
@@ -37,20 +50,19 @@ public class Node implements Serializable {
         Object http = data.get("http_address");
         hasHttp = (http != null);
 
-        attributes = (Map<String, Object>) data.get("attributes");
+        Map<String, Object> attributes = (Map<String, Object>) data.get("attributes");
         if (attributes != null) {
             isClient = ("false".equals(attributes.get("data")) && "false".equals(attributes.get("master")));
+            isData = !"false".equals(attributes.get("data"));
         }
 
         if (!hasHttp) {
             return;
         }
-        String httpAddr = http.toString();
-        // strip ip address - regex would work but it's overkill
-        int startIndex = httpAddr.indexOf("/") + 1;
-        int endIndex = httpAddr.indexOf(":");
-        ipAddress = httpAddr.substring(startIndex, endIndex);
-        httpPort = Integer.valueOf(httpAddr.substring(endIndex + 1, httpAddr.indexOf("]")));
+
+        IpAndPort ip = StringUtils.parseIpAddress(http.toString());
+        ipAddress = ip.ip;
+        httpPort = ip.port;
     }
 
     public boolean hasHttp() {
@@ -59,6 +71,10 @@ public class Node implements Serializable {
 
     public boolean isClient() {
         return isClient;
+    }
+
+    public boolean isData() {
+        return isData;
     }
 
     public String getId() {
@@ -108,7 +124,8 @@ public class Node implements Serializable {
     public String toString() {
         StringBuilder builder = new StringBuilder();
         builder.append("Node[id=").append(id).append(", name=").append(name).append(", ipAddress=").append(ipAddress)
-        .append(", httpPort=").append(httpPort).append("]");
+        .append(", httpPort=").append(httpPort).append(", isClient=").append(isClient).append(", isData=").append(isData)
+        .append("]");
         return builder.toString();
     }
 }

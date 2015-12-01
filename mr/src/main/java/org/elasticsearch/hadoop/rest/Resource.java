@@ -57,8 +57,7 @@ public class Resource {
                 // clean resource
                 resource = resource.substring(0, index);
                 index = resource.lastIndexOf("/");
-                Assert.isTrue(index >= 0 && index < resource.length() - 1, errorMessage + resource);
-                resource = resource.substring(0, index);
+                resource = (index > 0 ? resource.substring(0, index) : resource);
 
                 settings.setProperty(ConfigurationOptions.ES_RESOURCE, resource);
                 settings.setQuery(query);
@@ -68,13 +67,34 @@ public class Resource {
         String res = StringUtils.sanitizeResource(resource);
 
         int slash = res.indexOf("/");
-        Assert.isTrue(slash >= 0 && slash < res.length() - 1, errorMessage + res);
-        index = res.substring(0, slash);
-        type = res.substring(slash + 1);
+        if (slash < 0) {
+            index = res;
+            type = StringUtils.EMPTY;
+        }
+        else {
+            index = res.substring(0, slash);
+            type = res.substring(slash + 1);
 
+            Assert.hasText(type, "No type found; expecting [index]/[type]");
+        }
         Assert.hasText(index, "No index found; expecting [index]/[type]");
-        Assert.hasText(type, "No type found; expecting [index]/[type]");
-        Assert.isTrue(StringUtils.isLowerCase(index), String.format("Invalid index [%s] - needs to be lowercase", index));
+
+        StringBuilder fixedIndex = new StringBuilder();
+        if (index.contains("{") && index.contains("}")) {
+            int startPattern = index.indexOf("{");
+            int endPattern = index.indexOf("}");
+            if (endPattern > startPattern) {
+                fixedIndex.append(index.substring(0, startPattern));
+                fixedIndex.append(index.substring(endPattern + 1, index.length()));
+            }
+            else {
+                fixedIndex.append(index);
+            }
+        }
+        else {
+            fixedIndex.append(index);
+        }
+        Assert.isTrue(StringUtils.isLowerCase(fixedIndex), String.format("Invalid index [%s] - needs to be lowercase", index));
 
         indexAndType = index + "/" + type;
 

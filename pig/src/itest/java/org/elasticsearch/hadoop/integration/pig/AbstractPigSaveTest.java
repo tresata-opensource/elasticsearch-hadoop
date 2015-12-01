@@ -49,7 +49,7 @@ public class AbstractPigSaveTest extends AbstractPigTests {
         // initialize Pig in local mode
         RestClient client = new RestClient(new TestSettings());
         try {
-            client.deleteIndex("pig");
+            client.delete("pig");
         } catch (Exception ex) {
             // ignore
         }
@@ -107,7 +107,7 @@ public class AbstractPigSaveTest extends AbstractPigTests {
                 "REGISTER "+ Provisioner.ESHADOOP_TESTING_JAR + ";" +
                 //"A = LOAD 'src/test/resources/artists.dat' USING PigStorage() AS (id:long, name, links:bag{t:(url:chararray, picture: chararray)});" +
                 loadSource() +
-                "B = FOREACH A GENERATE name, ToDate(" + millis + "l), url;" +
+                "B = FOREACH A GENERATE name, ToDate(" + millis + "l) AS date, url;" +
                 "ILLUSTRATE B;" +
                 "STORE B INTO 'pig/timestamp' USING org.elasticsearch.hadoop.pig.EsStorage();";
 
@@ -117,8 +117,7 @@ public class AbstractPigSaveTest extends AbstractPigTests {
     @Test
     public void testTimestampMapping() throws Exception {
         String mapping = RestUtils.getMapping("pig/timestamp").skipHeaders().toString();
-        assertThat(mapping, startsWith("timestamp=[name=STRING, org.apache.pig.builtin.todate_"));
-        assertThat(mapping, endsWith("=DATE, url=STRING]"));
+        assertThat(mapping, containsString("date=DATE"));
     }
 
     @Test
@@ -258,8 +257,8 @@ public class AbstractPigSaveTest extends AbstractPigTests {
 
     @Test
     public void testNestedTuple() throws Exception {
-        RestUtils.putData("pig/nestedtuple", "{\"my_array\" : [\"1.a\",\"1.b\"]}".getBytes(StringUtils.UTF_8));
-        RestUtils.putData("pig/nestedtuple", "{\"my_array\" : [\"2.a\",\"2.b\"]}".getBytes(StringUtils.UTF_8));
+        RestUtils.postData("pig/nestedtuple", "{\"my_array\" : [\"1.a\",\"1.b\"]}".getBytes(StringUtils.UTF_8));
+        RestUtils.postData("pig/nestedtuple", "{\"my_array\" : [\"2.a\",\"2.b\"]}".getBytes(StringUtils.UTF_8));
         RestUtils.waitForYellow("pig");
     }
 

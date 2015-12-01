@@ -4,11 +4,9 @@ buildscript {
     repositories {
         mavenCentral()
         maven { url 'http://repo.spring.io/plugins-release' }
-
     }
     dependencies {
-        classpath('org.springframework.build.gradle:propdeps-plugin:0.0.5')
-        classpath('nl.javadude.gradle.plugins:license-gradle-plugin:0.5.0')
+        classpath('org.springframework.build.gradle:propdeps-plugin:0.0.7')
     }
 }
 
@@ -24,7 +22,6 @@ allprojects {
       // Hive depends on JDO ec2 missing from Maven Central
       maven { url "http://www.datanucleus.org/downloads/maven2" }
       maven { url "http://oss.sonatype.org/content/groups/public/" }
-  
     }
 
     apply plugin: "java"
@@ -38,7 +35,6 @@ allprojects {
     apply plugin: 'pmd'
     apply plugin: 'jacoco'
     apply from: "$rootDir/dist.gradle"
-    //apply plugin: 'license'
 }
 
 ext.hadoopClient = []
@@ -113,6 +109,16 @@ if (rootProject == project) {
 def File gitBranch() {
     // parse the git files to find out the revision
     File gitHead =  file("$rootDir/.git/HEAD")
+    if (gitHead != null && !gitHead.exists()) {
+      // Try as a sub module
+      subModuleGit = file("$rootDir/.git")
+      if (subModuleGit != null && subModuleGit.exists()) {
+        String content = subModuleGit.text.trim()
+        if (content.startsWith("gitdir:")) {
+            gitHead = file("$rootDir/" + content.replace('gitdir: ','') + "/HEAD")
+        }
+      }
+    }
 
     if (gitHead != null && gitHead.exists()) {
         String content = gitHead.text.trim()
@@ -148,7 +154,7 @@ ext.manifestTemplate = manifest {
         
         def build = System.env['ESHDP.BUILD']
         if (build != null)
-            manifest.attributes['Build'] = build
+            attributes['Build'] = build
         
         attributes['Repository-Revision'] = revHash
 }
@@ -165,8 +171,8 @@ allprojects { project ->
     ]
     
     compileTestJava {
-            sourceCompatibility = 1.6
-            targetCompatibility = 1.6
+		sourceCompatibility = 1.6
+		targetCompatibility = 1.6
     }
     
     sourceSets.test.resources.srcDirs = ["src/test/resources", "src/test/java"]
@@ -177,7 +183,7 @@ allprojects { project ->
         jacoco {
             enabled = project.hasProperty("enableJacoco")
             destinationFile = file("${rootProject.buildDir}/jacoco/jacocoTest.exec")
-			excludes = ["org.elasticsearch.spark.*"]
+            excludes = ["org.elasticsearch.spark.*"]
             if (enabled) {
                 System.setProperty("log4j.configuration", "$nullLog4jConfig")
             }
@@ -211,15 +217,21 @@ allprojects { project ->
         // force the use of commons-http from Hadoop 1.x
         // to avoid SLF4J warnings, force only one version
         force 'commons-httpclient:commons-httpclient:3.0.1' //, 'org.slf4j:slf4j-log4j12:1.7.6', 'org.slf4j:slf4j-api:1.7.6'
-        force 'com.google.guava:guava:14.0.1' // force guava version for Spark
-		force "org.codehaus.jackson:jackson-mapper-asl:$jacksonVersion", "org.codehaus.jackson:jackson-core-asl:$jacksonVersion"
+        //force 'com.google.guava:guava:18.0' // force guava version for Elastic
+        force 'joda-time:joda-time:2.8' // force guava version for Spark
+        force "org.codehaus.jackson:jackson-mapper-asl:$jacksonVersion", "org.codehaus.jackson:jackson-core-asl:$jacksonVersion"
+        // used when using Elastic non-shaded version
+        force "commons-cli:commons-cli:1.2"
         
         eachDependency { details ->
-
             // for slf4j use each dependency since there are so many variants
             if (details.requested.name.contains("slf4j-")) {
                 details.useVersion "1.7.6"
             }
+            if (details.requested.name.equals("servlet-api")) {
+                details.useTarget group: "org.eclipse.jetty.orbit", name: "javax.servlet", version: "3.0.0.v201112011016"
+            }
+
         }
       }
     }
@@ -250,7 +262,7 @@ allprojects { project ->
     
     task sourcesJar(type: Jar, dependsOn:classes) {
         classifier = 'sources'
-        from sourceSets.main.allJava
+        from sourceSets.main.allSource
     }
 
     javadoc {
@@ -284,9 +296,9 @@ allprojects { project ->
                 "http://commons.apache.org/proper/commons-logging/apidocs/",
                 "http://hadoop.apache.org/docs/stable2/api/",
                 //"http://hbase.apache.org/apidocs/",
-                "http://pig.apache.org/docs/r0.14.0/api/",
+                "http://pig.apache.org/docs/r0.15.0/api/",
                 // r0.13.1 is invalid as it does not provide the package list
-                "http://hive.apache.org/javadocs/r0.12.0/api/",
+                "http://hive.apache.org/javadocs/r1.2.1/api/",
                 "http://docs.cascading.org/cascading/2.6/javadoc/",
                 "http://spark.apache.org/docs/latest/api/java/",
                 "http://storm.apache.org/apidocs/"
@@ -389,7 +401,7 @@ def nestMRProject(target) {
     
     target.dependencies {
         provided(project(":elasticsearch-hadoop-mr"))
-        provided(project(path: ":elasticsearch-hadoop-mr", configuration:"provided"))
+        provided(project(path: ":elasticsearch-hadoop-mr", configuration:"compile"))
         
         testCompile project(":elasticsearch-hadoop-mr").sourceSets.test.runtimeClasspath
         itestCompile project(":elasticsearch-hadoop-mr").sourceSets.itest.runtimeClasspath
@@ -458,7 +470,7 @@ project(":elasticsearch-hadoop-hive") {
 
 
 // reusable method to nest Map/Reduce module in the rest of the projects to make them usable stand-alone
-def baseSparkProject(target, sparkVersion, java8) {
+def baseSparkProject(target, sparkVersion) {
    def scalaVer = project.hasProperty("scala") ? project.getProperty("scala") : "210"
 
     switch (scalaVer) {
@@ -474,16 +486,25 @@ def baseSparkProject(target, sparkVersion, java8) {
     
     target.archivesBaseName += "_$scalaMajorVersion"
 
-    if (java8) {
-        println "Elasticsearch Spark project cannot be compiled under JDK 8 - please change to JDK 6 or 7"
-        tasks.all { enabled = false }
-    }
-    else {
-        target.apply plugin: 'scala'
+    target.apply plugin: 'scala'
+    
+    target.compileScala {
+        //scalaCompileOptions.additionalParameters = ["-feature"]
+        //scalaCompileOptions.useAnt = false
     }
     
     if (sparkVersion != spark12Version)
         println "Using Scala $scalaMajorVersion [$scalaVersion]"
+
+    // when using Scala 2.11 use a different folder to cache the artifacts between builds
+    if (scalaVer == "211") {
+      target.sourceSets.each { 
+        it.output.classesDir = file(it.output.classesDir.absolutePath.replaceAll("classes", "classes.211"))
+      }
+      target.javadoc {
+        destinationDir = file("$project.docsDir/javadoc-211")
+      }
+    }
     
     def coreSrc = file("$target.projectDir/../core").absolutePath.replace('\\','/')
     
@@ -491,10 +512,11 @@ def baseSparkProject(target, sparkVersion, java8) {
         main.scala.srcDirs += "$coreSrc/main/scala"
         test.scala.srcDirs += "$coreSrc/test/scala"
         itest.java.srcDirs += "$coreSrc/itest/java"
-		itest.scala.srcDirs += "$coreSrc/itest/scala"
+        itest.scala.srcDirs += "$coreSrc/itest/scala"
         itest.resources.srcDirs += "$coreSrc/itest/resources"
     }
 
+    
     // currently the outside project folders are transformed into linked resources however
     // Gradle only supports one so the project will be invalid as not all sources will be in there
     // as such, they are setup here manually for Eclipse. IntelliJ probably needs a similar approach
@@ -505,7 +527,7 @@ def baseSparkProject(target, sparkVersion, java8) {
             linkedResources.add name: "core/main/scala", type: "2", location: "$coreSrc/main/scala"
             linkedResources.add name: "core/test/scala", type: "2", location: "$coreSrc/test/scala"
             linkedResources.add name: "core/itest/java", type: "2", location: "$coreSrc/itest/java"
-			linkedResources.add name: "core/itest/scala", type: "2", location: "$coreSrc/itest/scala"
+            linkedResources.add name: "core/itest/scala", type: "2", location: "$coreSrc/itest/scala"
             linkedResources.add name: "core/itest/resources", type: "2", location: "$coreSrc/itest/resources"
         }
         classpath.file {
@@ -517,7 +539,7 @@ def baseSparkProject(target, sparkVersion, java8) {
                 entries.add(new org.gradle.plugins.ide.eclipse.model.SourceFolder("core/main/scala", null))
                 entries.add(new org.gradle.plugins.ide.eclipse.model.SourceFolder("core/test/scala", null))
                 entries.add(new org.gradle.plugins.ide.eclipse.model.SourceFolder("core/itest/java", null))
-				entries.add(new org.gradle.plugins.ide.eclipse.model.SourceFolder("core/itest/scala", null))
+                entries.add(new org.gradle.plugins.ide.eclipse.model.SourceFolder("core/itest/scala", null))
                 entries.add(new org.gradle.plugins.ide.eclipse.model.SourceFolder("core/itest/resources", null))
             }
         }
@@ -526,42 +548,60 @@ def baseSparkProject(target, sparkVersion, java8) {
     target.dependencies {
         provided("org.apache.spark:spark-core_$scalaMajorVersion:$sparkVersion") {
             exclude group: 'javax.servlet'
+            exclude group: 'org.apache.hadoop'
         }
         
-        optional("org.apache.spark:spark-sql_$scalaMajorVersion:$sparkVersion")
+        optional("org.apache.spark:spark-sql_$scalaMajorVersion:$sparkVersion") {
+            exclude group: 'org.apache.hadoop'
+        }
+        
         compile("org.scala-lang:scala-library:$scalaVersion")
 
-		itestCompile("javax.servlet:javax.servlet-api:3.0.1")
-        itestCompile "org.apache.spark:spark-sql_$scalaMajorVersion:$sparkVersion"
-    }
-
-    nestMRProject(target)
-
-	// disable jacoco as it will fail due to class duplicates
-	target.test {
-		jacoco {
-			enabled = false
-			excludes = ["org.elasticsearch.spark.*"]
-		}
-	}
-    
-    if (!java8) {
-        target.scaladoc {
-            title = "${rootProject.description} ${version} API"
+        itestCompile("org.apache.spark:spark-sql_$scalaMajorVersion:$sparkVersion") {
+            exclude group: 'org.apache.hadoop'
         }
+    }
+    
+    nestMRProject(target)
+    
+    
+    // disable jacoco as it will fail
+    test {
+      jacoco {
+        enabled = false
+      }
+    }
+    
+    target.scaladoc {
+        title = "${rootProject.description} ${version} API"
     }
 }
 
 project(":elasticsearch-spark") {
     description = "Elasticsearch Spark (Spark 1.3+)"
 
-    baseSparkProject(project, spark13Version, java8)
+    baseSparkProject(project, spark13Version)
+    
+    // deal with the messy conflicts out there
+    configurations.all {
+      resolutionStrategy {
+        eachDependency { details ->
+            // in a similar vein, change all javax.servlet artifacts to the one used by Spark
+            // otherwise these will lead to SecurityException (signer information wrong)
+            if (details.requested.name.contains("servlet") && !details.requested.name.contains("guice")) {
+                details.useTarget group: "org.eclipse.jetty.orbit", name: "javax.servlet", version: "3.0.0.v201112011016"
+            }
+        }
+      }
+      
+      exclude group: "org.mortbay.jetty"
+    }
 }
 
 project(":elasticsearch-spark-1.2") {
     description = "Elasticsearch Spark (Spark 1.0-1.2)"
 
-    baseSparkProject(project, spark12Version, java8)
+    baseSparkProject(project, spark12Version)
 }
 
 project(":elasticsearch-storm") {
@@ -576,7 +616,7 @@ project(":elasticsearch-storm") {
     }
     
     // add itest to Eclipse
-    eclipse.classpath.plusConfigurations += configurations.itestCompile
+    //eclipse.classpath.plusConfigurations += [configurations.itestCompile]
 }
 
 configure(rootProject) {
@@ -604,9 +644,9 @@ allprojects { project ->
         ignoreFailures = true
         
         minHeapSize = "256m"
-        maxHeapSize = "768m"
+        maxHeapSize = "1024m"
         if (!java8)
-            jvmArgs '-XX:MaxPermSize=368m'
+            jvmArgs '-XX:MaxPermSize=512m'
 
         testLogging {
             displayGranularity 0
@@ -626,7 +666,7 @@ allprojects { project ->
             enabled = project.hasProperty("enableJacoco")
             append = true
             destinationFile = file("${rootProject.buildDir}/jacoco/jacocoTest.exec")
-			excludes = ["org.elasticsearch.spark.*"]
+            excludes = ["org.elasticsearch.spark.*"]
             
             if (enabled) {
                 System.setProperty("log4j.configuration", "$nullLog4jConfig")
@@ -638,7 +678,7 @@ allprojects { project ->
 configure(rootProject) {
     description = "Elasticsearch Hadoop"
     
-	// include Spark 1.3+ support in main jar
+    // include Spark 1.3+ support in main jar
     def eshModules = subprojects - project(":elasticsearch-repository-hdfs") - project(":elasticsearch-spark-1.2")
     
     // build root project dependencies
@@ -715,12 +755,12 @@ configure(rootProject) {
                 into ("${folderName}/dist")
             }
         }
-		
-		// add Spark-1.2 jar
-		from (project(":elasticsearch-spark-1.2").jar.destinationDir) {
-			into ("${folderName}/dist")
-		}
-		
+        
+        // add Spark-1.2 jar
+        from (project(":elasticsearch-spark-1.2").jar.destinationDir) {
+            into ("${folderName}/dist")
+        }
+        
         // execution phase only
         doLast {
             ant.checksum(file: archivePath, algorithm: 'SHA1', format: 'MD5SUM', fileext: '.sha1.txt')
@@ -743,6 +783,13 @@ configure(rootProject) {
                 destination "${buildDir}/jacoco/html"
             }
         }
+        
+        afterEvaluate {
+            classDirectories = files(classDirectories.files.collect {
+                // We're excluding Spark since the Scala bytecode trips Jacoco over and the plugin can't import yet filters
+                fileTree(dir: it, excludes: [ "org/elasticsearch/hadoop/yarn/**", "org/apache/hadoop/hive/**", "org/elasticsearch/spark/**", "org/elasticsearch/plugin/hadoop/**"])
+            })
+        }
     }
     
     task testReport(type: TestReport) {
@@ -754,7 +801,7 @@ configure(rootProject) {
     
     task wrapper(type: Wrapper) {
         description = 'Generates gradlew[.bat] scripts'
-        gradleVersion = '1.12'
+        gradleVersion = '2.7'
     }
 }
 
@@ -762,6 +809,7 @@ configure(rootProject) {
 allprojects { project ->
     
     findbugs {
+      toolVersion = "3.0.1"
       ignoreFailures = true
       effort = "max"
       reportLevel = "low"
@@ -780,6 +828,7 @@ allprojects { project ->
     pmd {
       ignoreFailures = true
       sourceSets = [sourceSets.main]
+      toolVersion = "5.3.3"
     }
     
     pmdMain {
@@ -791,7 +840,7 @@ allprojects { project ->
     }
 
     jacoco {
-        toolVersion = "0.7.4.201502262128"
+        toolVersion = "0.7.5.201505241946"
     }
 
     if (java8) {

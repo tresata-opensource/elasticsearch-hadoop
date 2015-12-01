@@ -1,15 +1,13 @@
 package org.elasticsearch.spark.serialization
 
-import java.lang.reflect.Method
 import scala.collection.Map
 import scala.collection.immutable.Nil
-import scala.collection.mutable.HashMap
-import scala.ref.WeakReference
 import org.elasticsearch.hadoop.serialization.Generator
 import org.elasticsearch.hadoop.serialization.builder.JdkValueWriter
-import org.elasticsearch.spark.serialization.{ ReflectionUtils => RU }
 import org.elasticsearch.hadoop.serialization.builder.ValueWriter.Result
-import org.apache.commons.logging.LogFactory
+import org.elasticsearch.spark.serialization.{ ReflectionUtils => RU }
+import org.elasticsearch.spark.rdd.CompatUtils
+import org.elasticsearch.hadoop.EsHadoopIllegalArgumentException
 
 class ScalaValueWriter(writeUnknownTypes: Boolean = false) extends JdkValueWriter(writeUnknownTypes) {
 
@@ -21,16 +19,15 @@ class ScalaValueWriter(writeUnknownTypes: Boolean = false) extends JdkValueWrite
     doWrite(value, generator, true)
   }
 
-  private def doWrite(value: AnyRef, generator: Generator, acceptsJavaBeans: Boolean): Result = {
+  private def doWrite(value: Any, generator: Generator, acceptsJavaBeans: Boolean): Result = {
     value match {
-      case None => generator.writeNull()
-      case Unit => generator.writeNull()
+      case null | None | Unit => generator.writeNull()
       case Nil =>
         generator.writeBeginArray(); generator.writeEndArray()
 
-      case s: Some[AnyRef] => return doWrite(s.get, generator, false)
+      case Some(s: AnyRef) => return doWrite(s, generator, false)
 
-      case m: Map[_, AnyRef] => {
+      case m: Map[_, _] => {
         generator.writeBeginObject()
         for ((k, v) <- m) {
           if (shouldKeep(generator.getParentPath(), k.toString())) {
@@ -44,7 +41,18 @@ class ScalaValueWriter(writeUnknownTypes: Boolean = false) extends JdkValueWrite
         generator.writeEndObject()
       }
 
-      case i: Traversable[AnyRef] => {
+      case i: Traversable[_] => {
+        generator.writeBeginArray()
+        for (v <- i) {
+          val result = doWrite(v, generator, false)
+          if (!result.isSuccesful()) {
+            return result
+          }
+        }
+        generator.writeEndArray()
+      }
+
+      case i: Array[_] => {
         generator.writeBeginArray()
         for (v <- i) {
           val result = doWrite(v, generator, false)
@@ -76,6 +84,11 @@ class ScalaValueWriter(writeUnknownTypes: Boolean = false) extends JdkValueWrite
       }
 
       case _ => {
+        // check if it's called by accident on a DataFrame/SchemaRDD (happens)
+        if (value.getClass().getName().startsWith("org.apache.spark.sql.")) {
+          throw new EsHadoopIllegalArgumentException("Spark SQL types are not handled through basic RDD saveToEs() calls; typically this is a mistake(as the SQL schema will be ignored). Use 'org.elasticsearch.spark.sql' package instead")
+        }
+
         // normal JDK types failed, try the JavaBean last
         val result = super.write(value, generator)
         if (!result.isSuccesful()) {

@@ -221,12 +221,16 @@ public abstract class RestService implements Serializable {
 
     @SuppressWarnings("unchecked")
     public static List<PartitionDefinition> findPartitions(Settings settings, Log log) {
+        Version.logVersion();
+
         boolean overlappingShards = false;
         Map<Shard, Node> targetShards = null;
 
+        InitializationUtils.validateSettings(settings);
+        InitializationUtils.discoverEsVersion(settings, log);
         InitializationUtils.discoverNodesIfNeeded(settings, log);
         InitializationUtils.filterNonClientNodesIfNeeded(settings, log);
-        InitializationUtils.discoverEsVersion(settings, log);
+        InitializationUtils.filterNonDataNodesIfNeeded(settings, log);
 
         String savedSettings = settings.save();
 
@@ -254,7 +258,6 @@ public abstract class RestService implements Serializable {
             }
         }
 
-        Version.logVersion();
         log.info(String.format("Reading from [%s]", settings.getResourceRead()));
 
         String savedMapping = null;
@@ -319,8 +322,10 @@ public abstract class RestService implements Serializable {
         }
 
         // take into account client node routing
-        QueryBuilder queryBuilder = QueryBuilder.query(settings).shard(partition.shardId).node(partition.nodeId).restrictToNode(partition.onlyNode && !settings.getNodesClientOnly());
+        QueryBuilder queryBuilder = QueryBuilder.query(settings).shard(partition.shardId)
+                                                .node(partition.nodeId).restrictToNode(partition.onlyNode && (!settings.getNodesClientOnly() && !settings.getNodesWANOnly()));
         queryBuilder.fields(settings.getScrollFields());
+        queryBuilder.filter(SettingsUtils.getFilters(settings));
 
         return new PartitionReader(scrollReader, client, queryBuilder);
     }
@@ -367,10 +372,13 @@ public abstract class RestService implements Serializable {
     }
 
     public static PartitionWriter createWriter(Settings settings, int currentSplit, int totalSplits, Log log) {
+        Version.logVersion();
 
+        InitializationUtils.validateSettings(settings);
+        InitializationUtils.discoverEsVersion(settings, log);
         InitializationUtils.discoverNodesIfNeeded(settings, log);
         InitializationUtils.filterNonClientNodesIfNeeded(settings, log);
-        InitializationUtils.discoverEsVersion(settings, log);
+        InitializationUtils.filterNonDataNodesIfNeeded(settings, log);
 
         List<String> nodes = SettingsUtils.discoveredOrDeclaredNodes(settings);
 
@@ -382,7 +390,6 @@ public abstract class RestService implements Serializable {
 
         Resource resource = new Resource(settings, false);
 
-        Version.logVersion();
         log.info(String.format("Writing to [%s]", resource));
 
         // single index vs multi indices
@@ -405,6 +412,10 @@ public abstract class RestService implements Serializable {
             if (repository.waitForYellow()) {
                 log.warn(String.format("Timed out waiting for index [%s] to reach yellow health", resource));
             }
+        }
+
+        if (settings.getNodesWANOnly()) {
+            return randomNodeWrite(settings, currentInstance, resource, log);
         }
 
         // if client-nodes are used, simply use the underlying nodes
@@ -461,6 +472,10 @@ public abstract class RestService implements Serializable {
             log.debug(String.format("Resource [%s] resolves as an index pattern", resource));
         }
 
+        return randomNodeWrite(settings, currentInstance, resource, log);
+    }
+
+    private static RestRepository randomNodeWrite(Settings settings, int currentInstance, Resource resource, Log log) {
         // multi-index write - since we don't know before hand what index will be used, pick a random node from the given list
         List<String> nodes = SettingsUtils.discoveredOrDeclaredNodes(settings);
         String node = nodes.get(new Random().nextInt(nodes.size()));

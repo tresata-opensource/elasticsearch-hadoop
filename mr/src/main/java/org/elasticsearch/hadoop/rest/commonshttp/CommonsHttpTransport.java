@@ -37,7 +37,6 @@ import org.apache.commons.httpclient.URI;
 import org.apache.commons.httpclient.URIException;
 import org.apache.commons.httpclient.UsernamePasswordCredentials;
 import org.apache.commons.httpclient.auth.AuthScope;
-import org.apache.commons.httpclient.methods.DeleteMethod;
 import org.apache.commons.httpclient.methods.EntityEnclosingMethod;
 import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.httpclient.methods.HeadMethod;
@@ -137,6 +136,19 @@ public class CommonsHttpTransport implements Transport, StatsAware {
         public HttpConnection getConnectionWithTimeout(HostConfiguration hostConfiguration, long timeout) {
             conn = super.getConnectionWithTimeout(hostConfiguration, timeout);
             return conn;
+        }
+
+        public void close() {
+            if (httpConnection != null) {
+                if (httpConnection.isOpen()) {
+                    releaseConnection(httpConnection);
+                }
+
+                httpConnection.close();
+            }
+
+            httpConnection = null;
+            conn = null;
         }
     }
 
@@ -360,13 +372,13 @@ public class CommonsHttpTransport implements Transport, StatsAware {
 
         switch (request.method()) {
         case DELETE:
-            http = new DeleteMethod();
+            http = new DeleteMethodWithBody();
             break;
         case HEAD:
             http = new HeadMethod();
             break;
         case GET:
-            http = new GetMethod();
+            http = (request.body() == null ? new GetMethod() : new GetMethodWithBody());
             break;
         case POST:
             http = new PostMethod();
@@ -400,6 +412,9 @@ public class CommonsHttpTransport implements Transport, StatsAware {
 
         ByteSequence ba = request.body();
         if (ba != null && ba.length() > 0) {
+            if (!(http instanceof EntityEnclosingMethod)) {
+                throw new IllegalStateException(String.format("Method %s cannot contain body - implementation bug", request.method().name()));
+            }
             EntityEnclosingMethod entityMethod = (EntityEnclosingMethod) http;
             entityMethod.setRequestEntity(new BytesArrayRequestEntity(ba));
             entityMethod.setContentChunked(false);
@@ -423,7 +438,8 @@ public class CommonsHttpTransport implements Transport, StatsAware {
             log.trace(String.format("Rx %s@[%s] [%s-%s] [%s]", proxyInfo, addr, http.getStatusCode(), HttpStatus.getStatusText(http.getStatusCode()), http.getResponseBodyAsString()));
         }
 
-        return new SimpleResponse(http.getStatusCode(), new ResponseInputStream(http), request.uri());
+        // the request URI is not set (since it is retried across hosts), so use the http info instead for source
+        return new SimpleResponse(http.getStatusCode(), new ResponseInputStream(http), httpInfo);
     }
 
     @Override
@@ -433,9 +449,9 @@ public class CommonsHttpTransport implements Transport, StatsAware {
         }
 
         HttpConnectionManager manager = client.getHttpConnectionManager();
-        if (manager instanceof SimpleHttpConnectionManager) {
+        if (manager instanceof SocketTrackingConnectionManager) {
             try {
-                ((SimpleHttpConnectionManager) manager).closeIdleConnections(0);
+                ((SocketTrackingConnectionManager) manager).close();
             } catch (NullPointerException npe) {
                 // ignore
             } catch (Exception ex) {

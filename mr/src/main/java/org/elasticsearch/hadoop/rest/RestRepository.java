@@ -22,10 +22,12 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 import org.apache.commons.logging.Log;
@@ -37,6 +39,8 @@ import org.elasticsearch.hadoop.cfg.Settings;
 import org.elasticsearch.hadoop.rest.stats.Stats;
 import org.elasticsearch.hadoop.rest.stats.StatsAware;
 import org.elasticsearch.hadoop.serialization.ScrollReader;
+import org.elasticsearch.hadoop.serialization.ScrollReader.Scroll;
+import org.elasticsearch.hadoop.serialization.builder.JdkValueReader;
 import org.elasticsearch.hadoop.serialization.bulk.BulkCommand;
 import org.elasticsearch.hadoop.serialization.bulk.BulkCommands;
 import org.elasticsearch.hadoop.serialization.bulk.MetadataExtractor;
@@ -46,6 +50,7 @@ import org.elasticsearch.hadoop.serialization.dto.mapping.Field;
 import org.elasticsearch.hadoop.util.Assert;
 import org.elasticsearch.hadoop.util.BytesArray;
 import org.elasticsearch.hadoop.util.BytesRef;
+import org.elasticsearch.hadoop.util.SettingsUtils;
 import org.elasticsearch.hadoop.util.StringUtils;
 import org.elasticsearch.hadoop.util.TrackingBytesArray;
 import org.elasticsearch.hadoop.util.unit.TimeValue;
@@ -73,7 +78,7 @@ public class RestRepository implements Closeable, StatsAware {
     private boolean writeInitialized = false;
     private boolean autoFlush = true;
 
-    // indicates whether there were writes errorrs or not
+    // indicates whether there were writes errors or not
     // flag indicating whether to flush the batch at close-time or not
     private boolean hadWriteErrors = false;
 
@@ -86,6 +91,7 @@ public class RestRepository implements Closeable, StatsAware {
 
     private final Settings settings;
     private final Stats stats = new Stats();
+
 
     public RestRepository(Settings settings) {
         this.settings = settings;
@@ -118,6 +124,10 @@ public class RestRepository implements Closeable, StatsAware {
         }
     }
 
+    ScrollQuery scanAll(String query, BytesArray body, ScrollReader reader) {
+        return scanLimit(query, body, -1, reader);
+    }
+
     /**
      * Returns a pageable (scan based) result to the given query.
      *
@@ -125,10 +135,10 @@ public class RestRepository implements Closeable, StatsAware {
      * @param reader scroll reader
      * @return a scroll query
      */
-    ScrollQuery scan(String query, BytesArray body, ScrollReader reader) {
+    ScrollQuery scanLimit(String query, BytesArray body, long limit, ScrollReader reader) {
         String[] scrollInfo = client.scan(query, body);
         String scrollId = scrollInfo[0];
-        long totalSize = Long.parseLong(scrollInfo[1]);
+        long totalSize = (limit < 1 ? Long.parseLong(scrollInfo[1]) : limit);
         return new ScrollQuery(this, scrollId, totalSize, reader);
     }
 
@@ -166,6 +176,7 @@ public class RestRepository implements Closeable, StatsAware {
 
     private void doWriteToIndex(BytesRef payload) {
         // check space first
+        // ba is the backing array for data
         if (payload.length() > ba.available()) {
             if (autoFlush) {
                 flush();
@@ -197,15 +208,15 @@ public class RestRepository implements Closeable, StatsAware {
     }
 
     public BitSet tryFlush() {
-        if (log.isDebugEnabled()) {
-            log.debug(String.format("Sending batch of [%d] bytes/[%s] entries", data.length(), dataEntries));
-        }
-
         BitSet bulkResult = EMPTY;
 
         try {
             // double check data - it might be a false flush (called on clean-up)
             if (data.length() > 0) {
+                if (log.isDebugEnabled()) {
+                    log.debug(String.format("Sending batch of [%d] bytes/[%s] entries", data.length(), dataEntries));
+                }
+
                 bulkResult = client.bulk(resourceW, data);
                 executedBulkWrite = true;
             }
@@ -241,25 +252,29 @@ public class RestRepository implements Closeable, StatsAware {
             log.debug("Closing repository and connection to Elasticsearch ...");
         }
 
-        if (!hadWriteErrors) {
-            flush();
+        // bail out if closed before
+        if (client == null) {
+            return;
         }
-        else {
-            if (log.isDebugEnabled()) {
-                log.debug("Dirty close; ignoring last existing write batch...");
+
+        try {
+            if (!hadWriteErrors) {
+                flush();
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.debug("Dirty close; ignoring last existing write batch...");
+                }
             }
-        }
 
-        if (requiresRefreshAfterBulk && executedBulkWrite) {
-            // refresh batch
-            client.refresh(resourceW);
+            if (requiresRefreshAfterBulk && executedBulkWrite) {
+                // refresh batch
+                client.refresh(resourceW);
 
-            if (log.isDebugEnabled()) {
-                log.debug(String.format("Refreshing index [%s]", resourceW));
+                if (log.isDebugEnabled()) {
+                    log.debug(String.format("Refreshing index [%s]", resourceW));
+                }
             }
-        }
-
-        if (client != null) {
+        } finally {
             client.close();
             stats.aggregate(client.stats());
             client = null;
@@ -269,7 +284,6 @@ public class RestRepository implements Closeable, StatsAware {
     public RestClient getRestClient() {
         return client;
     }
-
 
     public Object[] getReadTargetShards(boolean clientNodesOnly) {
         for (int retries = 0; retries < 3; retries++) {
@@ -283,27 +297,48 @@ public class RestRepository implements Closeable, StatsAware {
 
     protected Object[] doGetReadTargetShards(boolean clientNodesOnly) {
         List<List<Map<String, Object>>> info = client.targetShards(resourceR.index());
+        Map<Shard, Node> shards = new LinkedHashMap<Shard, Node>();
 
-        // if client-nodes routing is used, allow non-http clients
-        Map<String, Node> httpNodes = client.getHttpNodes(clientNodesOnly);
+        boolean overlappingShards = false;
+        Object[] result = new Object[2];
+        // false by default
+        result[0] = overlappingShards;
+        result[1] = shards;
+
+        Map<String, Node> httpNodes = Collections.emptyMap();
+
+        if (settings.getNodesWANOnly()) {
+            httpNodes = new LinkedHashMap<String, Node>();
+            List<String> nodes = SettingsUtils.discoveredOrDeclaredNodes(settings);
+            Random rnd = new Random();
+
+            for (List<Map<String, Object>> shardGroup : info) {
+                for (Map<String, Object> shardData : shardGroup) {
+                    Shard shard = new Shard(shardData);
+                    if (shard.getState().isStarted()) {
+                        int nextInt = rnd.nextInt(nodes.size());
+                        String nodeAddress = nodes.get(nextInt);
+                        // create a fake node
+                        Node node = new Node(shard.getNode(), "wan-only-node-" + nextInt, StringUtils.parseIpAddress(nodeAddress));
+                        httpNodes.put(shard.getNode(), node);
+                    }
+                }
+            }
+        }
+
+        else {
+            // if client-nodes routing is used, allow non-http clients
+            httpNodes = client.getHttpNodes(clientNodesOnly);
+        }
 
         if (httpNodes.isEmpty()) {
             String msg = "No HTTP-enabled data nodes found";
             if (!settings.getNodesClientOnly()) {
                 msg += String.format("; if you are using client-only nodes make sure to configure es-hadoop as such through [%s] property", ConfigurationOptions.ES_NODES_CLIENT_ONLY);
             }
-            new EsHadoopIllegalStateException(msg);
+            throw new EsHadoopIllegalStateException(msg);
         }
 
-        Map<Shard, Node> shards = new LinkedHashMap<Shard, Node>();
-
-        boolean overlappingShards = false;
-
-        Object[] result = new Object[2];
-
-        // false by default
-        result[0] = overlappingShards;
-        result[1] = shards;
 
         // check if multiple indices are hit
         if (!isReadIndexConcrete()) {
@@ -397,7 +432,7 @@ public class RestRepository implements Closeable, StatsAware {
         return Field.parseField(client.getMapping(resourceR.mapping()));
     }
 
-    public List<Object[]> scroll(String scrollId, ScrollReader reader) throws IOException {
+    public Scroll scroll(String scrollId, ScrollReader reader) throws IOException {
         InputStream scroll = client.scroll(scrollId);
         try {
             return reader.read(scroll);
@@ -436,6 +471,63 @@ public class RestRepository implements Closeable, StatsAware {
 
     public boolean touch() {
         return client.touch(resourceW.index());
+    }
+
+    public void delete() {
+        boolean isEs20 = SettingsUtils.isEs20(settings);
+        if (!isEs20) {
+            // ES 1.x - delete as usual
+            client.delete(resourceW.indexAndType());
+        }
+        else {
+            // try first a blind delete by query (since the plugin might be installed)
+            client.delete(resourceW.indexAndType() + "/_query?q=*");
+
+            // in ES 2.0 this means scrolling and deleting the docs by hand...
+
+            // do a scroll-scan without source
+
+            // as this is a delete, there's not much value in making this configurable so we just go for some sane/safe defaults
+            // 10m scroll timeout
+            // 250 results
+
+            int batchSize = 250;
+            String scanQuery = resourceW.indexAndType() + "/_search?search_type=scan&scroll=10m&size=" + batchSize + "&_source=false";
+
+            ScrollReader scrollReader = new ScrollReader(new JdkValueReader(), null, false, "_metadata", false);
+
+            // start iterating
+            ScrollQuery sq = scanAll(scanQuery, null, scrollReader);
+            try {
+                BytesArray entry = new BytesArray(0);
+
+                // delete each retrieved batch
+                String format = "{\"delete\":{\"_id\":\"%s\"}}\n";
+                while (sq.hasNext()) {
+                    entry.reset();
+                    entry.add(StringUtils.toUTF(String.format(format, sq.next()[0])));
+                    writeProcessedToIndex(entry);
+                }
+
+                flush();
+                // once done force a refresh
+                client.refresh(resourceW);
+            } finally {
+                stats.aggregate(sq.stats());
+                sq.close();
+            }
+        }
+    }
+
+    public boolean isEmpty(boolean read) {
+        Resource res = (read ? resourceR : resourceW);
+        boolean exists = client.exists(res.indexAndType());
+        return (exists ? count(read) <= 0 : true);
+    }
+
+    public long count(boolean read) {
+        Resource res = (read ? resourceR : resourceW);
+        return client.count(res.indexAndType(), QueryUtils.parseQuery(settings));
     }
 
     public boolean waitForYellow() {

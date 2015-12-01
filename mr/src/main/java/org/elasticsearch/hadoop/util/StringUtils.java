@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.StringTokenizer;
 
@@ -33,6 +34,7 @@ import org.apache.commons.httpclient.URIException;
 import org.apache.commons.httpclient.util.URIUtil;
 import org.codehaus.jackson.io.JsonStringEncoder;
 import org.elasticsearch.hadoop.EsHadoopIllegalArgumentException;
+import org.elasticsearch.hadoop.EsHadoopIllegalStateException;
 import org.elasticsearch.hadoop.serialization.json.BackportedJsonStringEncoder;
 
 
@@ -45,8 +47,31 @@ public abstract class StringUtils {
     public static final String EMPTY = "";
     public static final String[] EMPTY_ARRAY = new String[0];
     public static final String DEFAULT_DELIMITER = ",";
+    public static final String SLASH = "/";
+    public static final String PATH_TOP = "..";
+    public static final String PATH_CURRENT = ".";
 
     private static final boolean HAS_JACKSON_CLASS = ObjectUtils.isClassPresent("org.codehaus.jackson.io.JsonStringEncoder", StringUtils.class.getClassLoader());
+
+    public static class IpAndPort {
+        public final String ip;
+        public final int port;
+
+        IpAndPort(String ip, int port) {
+            this.ip = ip;
+            this.port = port;
+        }
+
+        IpAndPort(String ip) {
+            this.ip = ip;
+            this.port = 0;
+        }
+
+        @Override
+        public String toString() {
+            return (port > 0 ? ip + ":" + port : ip);
+        }
+    }
 
     public static boolean hasLength(CharSequence sequence) {
         return (sequence != null && sequence.length() > 0);
@@ -80,7 +105,7 @@ public abstract class StringUtils {
     }
 
     public static List<String> tokenize(String string) {
-        return tokenize(string, ",");
+        return tokenize(string, DEFAULT_DELIMITER);
     }
 
     public static List<String> tokenize(String string, String delimiters) {
@@ -114,6 +139,10 @@ public abstract class StringUtils {
             }
         }
         return tokens;
+    }
+
+    public static String concatenate(Collection<?> list) {
+        return concatenate(list, DEFAULT_DELIMITER);
     }
 
     public static String concatenate(Collection<?> list, String delimiter) {
@@ -323,6 +352,14 @@ public abstract class StringUtils {
         }
     }
 
+    public static String decodePath(String path) {
+        try {
+            return URIUtil.decode(path, "UTF-8");
+        } catch (URIException ex) {
+            throw new EsHadoopIllegalArgumentException("Cannot encode path" + path, ex);
+        }
+    }
+
     public static String encodeQuery(String query) {
         try {
             return URLEncoder.encode(query, "UTF-8");
@@ -370,5 +407,83 @@ public abstract class StringUtils {
         public static char[] jsonEncoding(String rawString) {
             return JsonStringEncoder.getInstance().quoteAsString(rawString);
         }
+    }
+
+    public static IpAndPort parseIpAddress(String httpAddr) {
+        // strip ip address - regex would work but it's overkill
+
+        // there are two formats - ip:port or [/ip:port]
+        // first the ip is normalized
+        if (httpAddr.contains("[")) {
+            int startIp = httpAddr.indexOf("/") + 1;
+            int endIp = httpAddr.indexOf("]");
+            if (startIp < 0 || endIp < 0) {
+                throw new EsHadoopIllegalStateException("Cannot parse http address " + httpAddr);
+            }
+            httpAddr = httpAddr.substring(startIp, endIp);
+        }
+
+        // then split
+        int portIndex = httpAddr.lastIndexOf(":");
+
+        if (portIndex > 0) {
+            String ip = httpAddr.substring(0, portIndex);
+            int port = Integer.valueOf(httpAddr.substring(portIndex + 1));
+            return new IpAndPort(ip, port);
+        }
+        return new IpAndPort(httpAddr);
+    }
+
+    public static String normalize(String path) {
+        if (path == null) {
+            return null;
+        }
+        String pathToUse = path.replace("\\", SLASH);
+
+        int prefixIndex = pathToUse.indexOf(":");
+        String prefix = "";
+        if (prefixIndex != -1) {
+            prefix = pathToUse.substring(0, prefixIndex + 1);
+            if (prefix.contains(SLASH)) {
+                prefix = "";
+            }
+            else {
+                pathToUse = pathToUse.substring(prefixIndex + 1);
+            }
+        }
+        if (pathToUse.startsWith(SLASH)) {
+            prefix = prefix + SLASH;
+            pathToUse = pathToUse.substring(1);
+        }
+
+        List<String> pathList = tokenize(pathToUse, SLASH);
+        List<String> pathTokens = new LinkedList<String>();
+        int tops = 0;
+
+        for (int i = pathList.size() - 1; i >= 0; i--) {
+            String element = pathList.get(i);
+            if (PATH_CURRENT.equals(element)) {
+                // current folder, ignore it
+            }
+            else if (PATH_TOP.equals(element)) {
+                // top folder, skip previous element
+                tops++;
+            }
+            else {
+                if (tops > 0) {
+                    // should it be skipped?
+                    tops--;
+                }
+                else {
+                    pathTokens.add(0, element);
+                }
+            }
+        }
+
+        for (int i = 0; i < tops; i++) {
+            pathTokens.add(0, PATH_TOP);
+        }
+
+        return prefix + concatenate(pathTokens, SLASH);
     }
 }

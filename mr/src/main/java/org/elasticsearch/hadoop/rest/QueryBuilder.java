@@ -18,19 +18,17 @@
  */
 package org.elasticsearch.hadoop.rest;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.elasticsearch.hadoop.EsHadoopIllegalArgumentException;
+import org.apache.commons.logging.LogFactory;
+import org.elasticsearch.hadoop.cfg.ConfigurationOptions;
 import org.elasticsearch.hadoop.cfg.Settings;
 import org.elasticsearch.hadoop.serialization.ScrollReader;
 import org.elasticsearch.hadoop.util.Assert;
 import org.elasticsearch.hadoop.util.BytesArray;
-import org.elasticsearch.hadoop.util.IOUtils;
 import org.elasticsearch.hadoop.util.SettingsUtils;
 import org.elasticsearch.hadoop.util.StringUtils;
 import org.elasticsearch.hadoop.util.unit.TimeValue;
@@ -39,91 +37,49 @@ public class QueryBuilder {
 
     private final Resource resource;
 
-    private static String MATCH_ALL = "{\"query\":{\"match_all\":{}}}";
-
-    private final Map<String, String> uriQuery = new LinkedHashMap<String, String>();
+    private final Map<String, String> uriParams = new LinkedHashMap<String, String>();
     private BytesArray bodyQuery;
 
     private TimeValue time = TimeValue.timeValueMinutes(10);
     private long size = 50;
+    private long limit = -1;
     private String shard;
     private String node;
     private boolean onlyNode;
-    private final boolean IS_ES_10;
+    private String[] filters;
+    private final boolean IS_ES_20;
     private final boolean INCLUDE_VERSION;
-    private final boolean ESCAPE_QUERY_URI;
 
     private String fields;
 
     QueryBuilder(Settings settings) {
         this.resource = new Resource(settings, true);
-        IS_ES_10 = SettingsUtils.isEs10(settings);
+        IS_ES_20 = SettingsUtils.isEs20(settings);
         INCLUDE_VERSION = settings.getReadMetadata() && settings.getReadMetadataVersion();
-        ESCAPE_QUERY_URI = settings.getScrollEscapeUri();
-        String query = settings.getQuery();
-        if (!StringUtils.hasText(query)) {
-            query = MATCH_ALL;
+
+        if (StringUtils.hasText(settings.getProperty(ConfigurationOptions.ES_SCROLL_ESCAPE_QUERY_URI))) {
+            LogFactory.getLog(ConfigurationOptions.class).warn(String
+                    .format("Setting '%s' has been deprecated as the URI queries are _always_ translated into a Query DSL; see the documentation for more information",
+                            ConfigurationOptions.ES_SCROLL_ESCAPE_QUERY_URI));
         }
-        parseQuery(query.trim(), settings);
+
+        bodyQuery = QueryUtils.parseQuery(settings);
     }
 
     public static QueryBuilder query(Settings settings) {
         return new QueryBuilder(settings).
                 time(settings.getScrollKeepAlive()).
-                size(settings.getScrollSize());
-    }
-
-
-    private void parseQuery(String query, Settings settings) {
-        // uri query
-        if (query.startsWith("?")) {
-            uriQuery.putAll(initUriQuery(query));
-        }
-        else if (query.startsWith("{")) {
-            // TODO: add early, basic JSON validation
-            bodyQuery = new BytesArray(query);
-        }
-        else {
-            try {
-                // must be a resource
-                InputStream in = settings.loadResource(query);
-                // peek the stream
-                int first = in.read();
-                if (Integer.valueOf('?').equals(first)) {
-                    uriQuery.putAll(initUriQuery(IOUtils.asString(in)));
-                }
-                else {
-                    bodyQuery = new BytesArray(1024);
-                    bodyQuery.add(first);
-                    IOUtils.asBytes(bodyQuery, in);
-                }
-            } catch (IOException ex) {
-                throw new EsHadoopIllegalArgumentException(String.format("Cannot determine specified query - doesn't appear to be URI or JSON based and location [%s] cannot be opened", query));
-            }
-        }
-    }
-
-    private Map<String, String> initUriQuery(String query) {
-        // strip leading ?
-        if (query.startsWith("?")) {
-            query = query.substring(1);
-        }
-        Map<String, String> params = new LinkedHashMap<String, String>();
-        for (String token : query.split("&")) {
-            int indexOf = token.indexOf("=");
-            Assert.isTrue(indexOf > 0, String.format("Cannot token [%s] in uri query [%s]", token, query));
-            if (ESCAPE_QUERY_URI) {
-                params.put(StringUtils.encodePath(token.substring(0, indexOf)),
-                        StringUtils.encodePath(token.substring(indexOf + 1)));
-            } else {
-                params.put(token.substring(0, indexOf), token.substring(indexOf + 1));
-            }
-        }
-        return params;
+                size(settings.getScrollSize()).
+                limit(settings.getScrollLimit());
     }
 
     public QueryBuilder size(long size) {
         this.size = size;
+        return this;
+    }
+
+    public QueryBuilder limit(long limit) {
+        this.limit = limit;
         return this;
     }
 
@@ -150,7 +106,18 @@ public class QueryBuilder {
         return this;
     }
 
+    public QueryBuilder filter(String... filters) {
+        this.filters = filters;
+        return this;
+    }
+
     private String assemble() {
+        if (limit > 0) {
+            if (size > limit) {
+                size = limit;
+            }
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append(StringUtils.encodePath(resource.index()));
         sb.append("/");
@@ -158,25 +125,21 @@ public class QueryBuilder {
         sb.append("/_search?");
 
         // override infrastructure params
-        uriQuery.put("search_type", "scan");
-        uriQuery.put("scroll", String.valueOf(time.minutes()));
-        uriQuery.put("size", String.valueOf(size));
+        uriParams.put("search_type", "scan");
+        uriParams.put("scroll", String.valueOf(time.toString()));
+        uriParams.put("size", String.valueOf(size));
         if (INCLUDE_VERSION) {
-            uriQuery.put("version", "");
+            uriParams.put("version", "");
         }
 
         // override fields
         if (StringUtils.hasText(fields)) {
-            if (IS_ES_10) {
-                uriQuery.put("_source", fields);
-                uriQuery.remove("fields");
-            }
-            else {
-                uriQuery.put("fields", fields);
-            }
+            // ES 1.0
+            uriParams.put("_source", fields);
+            uriParams.remove("fields");
         }
         else {
-            uriQuery.remove("fields");
+            uriParams.remove("fields");
         }
 
         StringBuilder pref = new StringBuilder();
@@ -193,11 +156,11 @@ public class QueryBuilder {
         }
 
         if (pref.length() > 0) {
-            uriQuery.put("preference", pref.toString());
+            uriParams.put("preference", pref.toString());
         }
 
         // append params
-        for (Iterator<Entry<String, String>> it = uriQuery.entrySet().iterator(); it.hasNext();) {
+        for (Iterator<Entry<String, String>> it = uriParams.entrySet().iterator(); it.hasNext();) {
             Entry<String, String> entry = it.next();
             sb.append(entry.getKey());
             if (StringUtils.hasText(entry.getValue())) {
@@ -214,7 +177,8 @@ public class QueryBuilder {
 
     public ScrollQuery build(RestRepository client, ScrollReader reader) {
         String scrollUri = assemble();
-        return client.scan(scrollUri, bodyQuery, reader);
+        bodyQuery = QueryUtils.applyFilters(bodyQuery, filters);
+        return client.scanLimit(scrollUri, bodyQuery, limit, reader);
     }
 
     @Override

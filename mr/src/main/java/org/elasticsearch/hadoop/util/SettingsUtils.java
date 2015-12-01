@@ -41,7 +41,17 @@ public abstract class SettingsUtils {
     }
 
     private static String qualifyNode(String node, int defaultPort) {
-        return (node.contains(":") ? node : node + ":" + defaultPort);
+        int index = node.lastIndexOf(':');
+        if (index > 0) {
+            if (index + 1 < node.length()) {
+                // the port is already in the node
+                if (Character.isDigit(node.charAt(index + 1))) {
+                    return node;
+                }
+            }
+        }
+
+        return node + ":" + defaultPort;
     }
 
     public static void pinNode(Settings settings, String node) {
@@ -74,7 +84,7 @@ public abstract class SettingsUtils {
     }
 
     public static void setDiscoveredNodes(Settings settings, Collection<String> nodes) {
-        settings.setProperty(InternalConfigurationOptions.INTERNAL_ES_DISCOVERED_NODES, StringUtils.concatenate(nodes, StringUtils.DEFAULT_DELIMITER));
+        settings.setProperty(InternalConfigurationOptions.INTERNAL_ES_DISCOVERED_NODES, StringUtils.concatenate(nodes));
     }
 
     public static List<String> declaredNodes(Settings settings) {
@@ -100,7 +110,7 @@ public abstract class SettingsUtils {
                 if (index > 0) {
                     String key = string.substring(0, index);
                     aliasMap.put(key, string.substring(index + 1));
-                    aliasMap.put(caseInsensitive ? key.toLowerCase(Locale.ENGLISH) : key, string.substring(index + 1));
+                    aliasMap.put(caseInsensitive ? key.toLowerCase(Locale.ROOT) : key, string.substring(index + 1));
                 }
             }
         }
@@ -108,19 +118,34 @@ public abstract class SettingsUtils {
         return aliasMap;
     }
 
+    public static void setFilters(Settings settings, String... filters) {
+        // clear any filters inside the settings
+        settings.setProperty(InternalConfigurationOptions.INTERNAL_ES_QUERY_FILTERS, "");
+
+        if (ObjectUtils.isEmpty(filters)) {
+            return;
+        }
+
+        settings.setProperty(InternalConfigurationOptions.INTERNAL_ES_QUERY_FILTERS, IOUtils.serializeToBase64(filters));
+    }
+
+    public static String[] getFilters(Settings settings) {
+        return IOUtils.deserializeFromBase64(settings.getProperty(InternalConfigurationOptions.INTERNAL_ES_QUERY_FILTERS));
+    }
+
     /**
-     * Whether the settings indicate a ES 1.0RC1 (which introduces breaking changes) or lower (1.0.0.Beta2)
+     * Whether the settings indicate a ES 2.x (which introduces breaking changes) or 1.x.
      *
      * @param settings
      * @return
      */
-    public static boolean isEs10(Settings settings) {
+    public static boolean isEs20(Settings settings) {
         String version = settings.getProperty(InternalConfigurationOptions.INTERNAL_ES_VERSION);
         // assume ES 1.0 by default
         if (!StringUtils.hasText(version)) {
             return true;
         }
 
-        return ("1.0.0.RC".compareTo(version) <= 0 || "1.0.0".equals(version));
+        return version.startsWith("2.");
     }
 }
