@@ -208,6 +208,21 @@ public abstract class StringUtils {
         return (sb.length() == sequence.length() ? sequence.toString() : sb.toString());
     }
 
+    public static String trimWhitespace(String string) {
+   		if (!hasLength(string)) {
+   			return string;
+   		}
+   		StringBuilder sb = new StringBuilder(string);
+   		while (sb.length() > 0 && Character.isWhitespace(sb.charAt(0))) {
+   			sb.deleteCharAt(0);
+   		}
+   		while (sb.length() > 0 && Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+   			sb.deleteCharAt(sb.length() - 1);
+   		}
+   		// try to return the initial string if possible
+   		return (sb.length() == string.length() ? string : sb.toString());
+   	}
+
     public static String asUTFString(byte[] content) {
         return asUTFString(content, 0, content.length);
     }
@@ -385,6 +400,15 @@ public abstract class StringUtils {
         return true;
     }
 
+    public static boolean hasLetter(CharSequence string) {
+        for (int index = 0; index < string.length(); index++) {
+            if (Character.isLetter(string.charAt(index))) {
+                return true;
+            }
+        }
+        return false;   
+    }
+
     public static String jsonEncoding(String rawString) {
         return new String(HAS_JACKSON_CLASS ? JacksonStringEncoder.jsonEncoding(rawString) : BackportedJsonStringEncoder.getInstance().quoteAsString(rawString));
     }
@@ -412,12 +436,15 @@ public abstract class StringUtils {
     public static IpAndPort parseIpAddress(String httpAddr) {
         // strip ip address - regex would work but it's overkill
 
-        // there are two formats - ip:port or [/ip:port]
+        // there are four formats - ip:port, hostname/ip:port or [/ip:port] and [hostname/ip:port]
         // first the ip is normalized
-        if (httpAddr.contains("[")) {
+        if (httpAddr.contains("/")) {
             int startIp = httpAddr.indexOf("/") + 1;
             int endIp = httpAddr.indexOf("]");
-            if (startIp < 0 || endIp < 0) {
+            if (endIp < 0) {
+                endIp = httpAddr.length();
+            }
+            if (startIp < 0) {
                 throw new EsHadoopIllegalStateException("Cannot parse http address " + httpAddr);
             }
             httpAddr = httpAddr.substring(startIp, endIp);

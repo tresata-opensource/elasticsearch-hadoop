@@ -533,7 +533,7 @@ def baseSparkProject(target, sparkVersion) {
         classpath.file {
             whenMerged { cp ->
                 entries.removeAll { entry ->
-                    entry.kind == 'src' && entry.path in ["scala", "java", "resources"]
+                    entry.kind == 'src' && (entry.path in ["scala", "java", "resources"] || entry.path.startsWith("itest-") || entry.path.endsWith("-scala"))
                 }
                 
                 entries.add(new org.gradle.plugins.ide.eclipse.model.SourceFolder("core/main/scala", null))
@@ -643,10 +643,10 @@ allprojects { project ->
         
         ignoreFailures = true
         
-        minHeapSize = "256m"
-        maxHeapSize = "1024m"
+        minHeapSize = "1024m"
+        maxHeapSize = "4096m"
         if (!java8)
-            jvmArgs '-XX:MaxPermSize=512m'
+            jvmArgs '-XX:MaxPermSize=1024m'
 
         testLogging {
             displayGranularity 0
@@ -801,7 +801,7 @@ configure(rootProject) {
     
     task wrapper(type: Wrapper) {
         description = 'Generates gradlew[.bat] scripts'
-        gradleVersion = '2.7'
+        gradleVersion = '2.8'
     }
 }
 

@@ -9,6 +9,10 @@ Elasticsearch (__1.x__ or higher (2.x _highly_ recommended)) cluster accessible 
 Significant effort has been invested to create a small, dependency-free, self-contained jar that can be downloaded and put to use without any dependencies. Simply make it available to your job classpath and you're set.
 For a certain library, see the dedicated [chapter](http://www.elastic.co/guide/en/elasticsearch/hadoop/current/requirements.html).
 
+ES-Hadoop 2.0.x and 2.1.x are compatible with Elasticsearch __1.X__ only
+
+ES-Hadoop 2.2.x and higher are compatible with Elasticsearch __1.X__ and __2.X__
+
 ## Installation
 
 ### Stable Release (currently `2.1.2`)
@@ -21,14 +25,14 @@ Available through any Maven-compatible tool:
   <version>2.1.2</version>
 </dependency>
 ```
-### Beta Release (currently `2.2.0-beta1`)
+### Beta Release (currently `2.2.0-rc1`)
 Available through any Maven-compatible tool:
 
 ```xml
 <dependency>
   <groupId>org.elasticsearch</groupId>
   <artifactId>elasticsearch-hadoop</artifactId>
-  <version>2.2.0-beta1</version>
+  <version>2.2.0-rc1</version>
 </dependency>
 ```
 or as a stand-alone [ZIP](http://www.elastic.co/downloads/hadoop).
