@@ -643,10 +643,10 @@ allprojects { project ->
         
         ignoreFailures = true
         
-        minHeapSize = "1024m"
-        maxHeapSize = "4096m"
+        minHeapSize = "256m"
+        maxHeapSize = "768m"
         if (!java8)
-            jvmArgs '-XX:MaxPermSize=1024m'
+            jvmArgs '-XX:MaxPermSize=496m'
 
         testLogging {
             displayGranularity 0
