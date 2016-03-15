@@ -41,6 +41,10 @@ public interface ConfigurationOptions {
     String ES_PORT = "es.port";
     String ES_PORT_DEFAULT = "9200";
 
+    /** Elasticsearch prefix **/
+    String ES_NODES_PATH_PREFIX = "es.nodes.path.prefix";
+    String ES_NODES_PATH_PREFIX_DEFAULT = "";
+
     /** Elasticsearch index */
     String ES_RESOURCE = "es.resource";
     String ES_RESOURCE_READ = "es.resource.read";
@@ -132,20 +136,6 @@ public interface ConfigurationOptions {
     String ES_INPUT_JSON = "es.input.json";
     String ES_INPUT_JSON_DEFAULT = "no";
 
-    /** Field options **/
-    String ES_FIELD_READ_EMPTY_AS_NULL = "es.field.read.empty.as.null";
-    String ES_FIELD_READ_EMPTY_AS_NULL_DEFAULT = "yes";
-    String ES_AUTO_DETECT_FIELDS = "es.field.auto.detect";
-    String ES_AUTO_DETECT_FIELDS_DEFAULT = "false";
-    String ES_AUTO_CONVERT_TYPES = "es.field.detect.types";
-    String ES_AUTO_CONVERT_TYPES_DEFAULT = "false";
-
-    String ES_FIELD_READ_VALIDATE_PRESENCE = "es.field.read.validate.presence";
-    String ES_FIELD_READ_VALIDATE_PRESENCE_DEFAULT = "warn";
-
-    String ES_FIELD_READ_AS_ARRAY_INCLUDE = "es.field.read.as.array.include";
-    String ES_FIELD_READ_AS_ARRAY_EXCLUDE = "es.field.read.as.array.exclude";
-
     /** Index settings */
     String ES_INDEX_AUTO_CREATE = "es.index.auto.create";
     String ES_INDEX_AUTO_CREATE_DEFAULT = "yes";
@@ -195,12 +185,39 @@ public interface ConfigurationOptions {
 
 
     /** Read settings */
+
+    /** Field options **/
+    String ES_READ_FIELD_EMPTY_AS_NULL = "es.read.field.empty.as.null";
+    String ES_READ_FIELD_EMPTY_AS_NULL_LEGACY = "es.field.read.empty.as.null";
+    String ES_READ_FIELD_EMPTY_AS_NULL_DEFAULT = "yes";
+
+    String ES_AUTO_DETECT_FIELDS = "es.field.auto.detect";
+    String ES_AUTO_DETECT_FIELDS_DEFAULT = "false";
+
+    String ES_AUTO_CONVERT_TYPES = "es.field.detect.types";
+    String ES_AUTO_CONVERT_TYPES_DEFAULT = "false";
+
+    String ES_READ_FIELD_VALIDATE_PRESENCE = "es.read.field.validate.presence";
+    String ES_READ_FIELD_VALIDATE_PRESENCE_LEGACY = "es.field.read.validate.presence";
+    String ES_READ_FIELD_VALIDATE_PRESENCE_DEFAULT = "warn";
+
+    String ES_READ_FIELD_INCLUDE = "es.read.field.include";
+    String ES_READ_FIELD_EXCLUDE = "es.read.field.exclude";
+
+    String ES_READ_FIELD_AS_ARRAY_INCLUDE = "es.read.field.as.array.include";
+    String ES_READ_FIELD_AS_ARRAY_EXCLUDE = "es.read.field.as.array.exclude";
+
+
+    /** Metadata */
     String ES_READ_METADATA = "es.read.metadata";
     String ES_READ_METADATA_DEFAULT = "false";
     String ES_READ_METADATA_FIELD = "es.read.metadata.field";
     String ES_READ_METADATA_FIELD_DEFAULT = "_metadata";
     String ES_READ_METADATA_VERSION = "es.read.metadata.version";
     String ES_READ_METADATA_VERSION_DEFAULT = "false";
+    String ES_READ_UNMAPPED_FIELDS_IGNORE = "es.read.unmapped.fields.ignore";
+    String ES_READ_UNMAPPED_FIELDS_IGNORE_DEFAULT = "true";
+
 
     /** Operation types */
     String ES_WRITE_OPERATION = "es.write.operation";
@@ -251,6 +268,13 @@ public interface ConfigurationOptions {
     String ES_NET_PROXY_HTTP_PASS = "es.net.proxy.http.pass";
     String ES_NET_PROXY_HTTP_USE_SYSTEM_PROPS = "es.net.proxy.http.use.system.props";
     String ES_NET_PROXY_HTTP_USE_SYSTEM_PROPS_DEFAULT = "yes";
+
+    String ES_NET_PROXY_HTTPS_HOST = "es.net.proxy.https.host";
+    String ES_NET_PROXY_HTTPS_PORT = "es.net.proxy.https.port";
+    String ES_NET_PROXY_HTTPS_USER = "es.net.proxy.https.user";
+    String ES_NET_PROXY_HTTPS_PASS = "es.net.proxy.https.pass";
+    String ES_NET_PROXY_HTTPS_USE_SYSTEM_PROPS = "es.net.proxy.https.use.system.props";
+    String ES_NET_PROXY_HTTPS_USE_SYSTEM_PROPS_DEFAULT = "yes";
 
     String ES_NET_PROXY_SOCKS_HOST = "es.net.proxy.socks.host";
     String ES_NET_PROXY_SOCKS_PORT = "es.net.proxy.socks.port";

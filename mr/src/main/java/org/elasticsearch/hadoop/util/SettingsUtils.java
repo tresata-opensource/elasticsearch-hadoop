@@ -20,6 +20,7 @@ package org.elasticsearch.hadoop.util;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -31,6 +32,7 @@ import java.util.Set;
 import org.elasticsearch.hadoop.EsHadoopIllegalArgumentException;
 import org.elasticsearch.hadoop.cfg.InternalConfigurationOptions;
 import org.elasticsearch.hadoop.cfg.Settings;
+import org.elasticsearch.hadoop.serialization.field.FieldFilter.NumberedInclude;
 
 public abstract class SettingsUtils {
 
@@ -58,13 +60,22 @@ public abstract class SettingsUtils {
     }
 
     private static String resolveHostToIpIfNecessary(String host) {
+        String schemaDelimiter = "://";
+        String schema = StringUtils.EMPTY;
+
+        if (host.contains(schemaDelimiter)) {
+            int index = host.indexOf(schemaDelimiter);
+            schema = host.substring(0, index);
+            host = host.substring(index + schemaDelimiter.length());
+        }
         int index = host.lastIndexOf(':');
         String name = index > 0 ? host.substring(0, index) : host;
         // if the port is specified, include the ":"
         String port = index > 0 ? host.substring(index) : "";
         if (StringUtils.hasLetter(name)) {
             try {
-                return InetAddress.getByName(name).getHostAddress() + port;
+                String hostAddress = InetAddress.getByName(name).getHostAddress() + port;
+                return StringUtils.hasText(schema) ? schema + schemaDelimiter + hostAddress : hostAddress;
             } catch (UnknownHostException ex) {
                 throw new EsHadoopIllegalArgumentException("Cannot resolve ip for hostname: " + name);
             }
@@ -165,5 +176,35 @@ public abstract class SettingsUtils {
         }
 
         return version.startsWith("2.");
+    }
+
+    public static List<NumberedInclude> getFieldArrayFilterInclude(Settings settings) {
+        String includeString = settings.getReadFieldAsArrayInclude();
+        List<String> includes = StringUtils.tokenize(includeString);
+
+        List<NumberedInclude> list = new ArrayList<NumberedInclude>(includes.size());
+
+        for (String include : includes) {
+            int index = include.indexOf(":");
+            String filter = include;
+            int depth = 1;
+
+            try {
+            if (index > 0) {
+                filter = include.substring(0, index);
+                String depthString = include.substring(index + 1);
+                if (depthString.length() > 0) {
+                    depth = Integer.parseInt(depthString);
+                }
+            }
+            } catch (NumberFormatException ex) {
+                throw new EsHadoopIllegalArgumentException(
+                        String.format(Locale.ROOT, "Invalid parameter [%s] specified in setting [%s]",
+                        include, includeString), ex);
+            }
+            list.add(new NumberedInclude(filter, depth));
+        }
+
+        return list;
     }
 }
