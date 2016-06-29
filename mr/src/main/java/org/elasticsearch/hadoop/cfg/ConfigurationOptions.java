@@ -267,6 +267,9 @@ public interface ConfigurationOptions {
     String ES_NET_SSL_CERT_ALLOW_SELF_SIGNED = "es.net.ssl.cert.allow.self.signed";
     String ES_NET_SSL_CERT_ALLOW_SELF_SIGNED_DEFAULT = "false";
 
+    String ES_NET_SSL_CERT_ALLOW_ALL = "es.net.ssl.cert.allow.all";
+    String ES_NET_SSL_CERT_ALLOW_ALL_DEFAULT = "false";
+    
     String ES_NET_HTTP_AUTH_USER = "es.net.http.auth.user";
     String ES_NET_HTTP_AUTH_PASS = "es.net.http.auth.pass";
 
