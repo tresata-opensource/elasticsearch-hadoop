@@ -98,11 +98,11 @@ uploadArchives {
         mavenDeployer {
             customizePom(pom, project)
             
-            repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
-                authentication(userName: deployUsername(), password: deployPassword())
+            repository(url: "http://server02:8080/repository/internal/") {
+                authentication(userName: mavenUser, password: mavenPassword)
             }
-            snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
-                authentication(userName: deployUsername(), password: deployPassword())
+            snapshotRepository(url: "http://server02:8080/repository/snapshots/") {
+                authentication(userName: mavenUser, password: mavenPassword)
             }
             if (enableArtifactSigning) {
                 beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
