@@ -94,7 +94,19 @@ public class AbstractCascadingHadoopSearchTest {
         Tap out = new HadoopPrintStreamTap(Stream.NULL);
         build(cfg(), in, out, pipe);
     }
+    
+    @Test
+    public void testReadFromESWithoutFields() throws Exception {
+        Tap in = new EsTap("cascading-hadoop/artists", query);
+        Pipe pipe = new Pipe("copy");
+       pipe = new Each(pipe, AssertionLevel.STRICT, new AssertSizeEquals(3));
+        pipe = new Each(pipe, AssertionLevel.STRICT, new AssertNotNull());
 
+        // print out
+       Tap out = new HadoopPrintStreamTap(Stream.NULL);
+       build(cfg(), in, out, pipe);
+    }
+    
     @Test
     public void testReadFromESAliasedField() throws Exception {
         Tap in = new EsTap("cascading-hadoop/alias", query, new Fields("address"));
