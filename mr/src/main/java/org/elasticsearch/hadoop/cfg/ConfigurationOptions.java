@@ -197,11 +197,6 @@ public interface ConfigurationOptions {
     String ES_READ_FIELD_EMPTY_AS_NULL_LEGACY = "es.field.read.empty.as.null";
     String ES_READ_FIELD_EMPTY_AS_NULL_DEFAULT = "yes";
 
-    String ES_AUTO_DETECT_FIELDS = "es.field.auto.detect";
-    String ES_AUTO_DETECT_FIELDS_DEFAULT = "false";
-    String ES_AUTO_CONVERT_TYPES = "es.field.detect.types";
-    String ES_AUTO_CONVERT_TYPES_DEFAULT = "false";
-    
     String ES_READ_FIELD_VALIDATE_PRESENCE = "es.read.field.validate.presence";
     String ES_READ_FIELD_VALIDATE_PRESENCE_LEGACY = "es.field.read.validate.presence";
     String ES_READ_FIELD_VALIDATE_PRESENCE_DEFAULT = "warn";
