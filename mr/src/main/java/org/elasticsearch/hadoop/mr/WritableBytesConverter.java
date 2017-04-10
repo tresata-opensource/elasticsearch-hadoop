@@ -18,26 +18,26 @@
  */
 package org.elasticsearch.hadoop.mr;
 
-import org.apache.hadoop.io.BytesWritable;
-import org.apache.hadoop.io.Text;
 import org.elasticsearch.hadoop.serialization.JdkBytesConverter;
 import org.elasticsearch.hadoop.util.BytesArray;
 
 public class WritableBytesConverter extends JdkBytesConverter {
 
+    private static SafeWritableConverter safeWritableConverter;
+
+    static {
+        try {
+            safeWritableConverter = new SafeWritableConverter();
+        } catch (Error e) {
+            // no Hadoop libs loaded
+        }
+    }
+
     @Override
     public void convert(Object from, BytesArray to) {
-        // handle common cases
-        if (from instanceof Text) {
-            Text t = (Text) from;
-            to.bytes(t.getBytes(), t.getLength());
-            return;
-        }
-        if (from instanceof BytesWritable) {
-            BytesWritable b = (BytesWritable) from;
-            to.bytes(b.getBytes(), b.getLength());
-            return;
-        }
+
+        if (safeWritableConverter != null)
+            safeWritableConverter.invoke(from, to);
 
         super.convert(from, to);
     }

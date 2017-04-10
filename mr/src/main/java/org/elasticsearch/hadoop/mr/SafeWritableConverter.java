@@ -16,34 +16,30 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.elasticsearch.hadoop.rest;
 
-import java.util.Arrays;
+package org.elasticsearch.hadoop.mr;
 
-import org.elasticsearch.hadoop.util.StringUtils;
-import org.junit.Test;
+import org.apache.hadoop.io.BytesWritable;
+import org.apache.hadoop.io.Text;
+import org.elasticsearch.hadoop.util.BytesArray;
 
-import static org.junit.Assert.assertThat;
-
-import static org.hamcrest.CoreMatchers.is;
-
-public class EscapeTest {
-
-    @Test
-    public void testSingleAmpersandEscape() {
-        String uri = StringUtils.encodeQuery("&c");
-        assertThat(uri, is("%26c"));
+/**
+ *
+ */
+class SafeWritableConverter {
+    public SafeWritableConverter() {
+        Text.class.getName(); // force class to be loaded
     }
 
-    @Test
-    public void testMultiAmpersandEscapeSimple() {
-        String uri = StringUtils.concatenateAndUriEncode(Arrays.asList("&a", "$b", "#c", "!d", "/e", ":f"), ",");
-        assertThat(uri, is("%26a,%24b,%23c,%21d,%2Fe,%3Af"));
-    }
-
-    @Test
-    public void testEscapePercent() {
-        String uri = StringUtils.encodeQuery("%s");
-        assertThat(uri, is("%25s"));
+    public void invoke(Object from, BytesArray to) {
+        // handle common cases
+        if (from instanceof Text) {
+            Text t = (Text) from;
+            to.bytes(t.getBytes(), t.getLength());
+        }
+        if (from instanceof BytesWritable) {
+            BytesWritable b = (BytesWritable) from;
+            to.bytes(b.getBytes(), b.getLength());
+        }
     }
 }
