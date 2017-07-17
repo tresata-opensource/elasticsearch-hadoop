@@ -1,5 +1,10 @@
 # Elasticsearch YARN - Beta Status
 
+## Warning: Deprecated in 5.5.0
+Elasticsearch YARN is deprecated and will be removed in 6.0
+
+## Overview
+
 Elasticsearch YARN project allows Elasticsearch to run within a Hadoop YARN cluster, handling the provisioning and life-cycle of the Elasticsearch cluster the command-line interface (CLI).
 Note the project is in Beta status.
 
@@ -13,7 +18,7 @@ Simply download elasticsearch-yarn-<version>.jar in a location of choice and mak
 
 
     > ls
-    elasticsearch-yarn-5.3.0
+    elasticsearch-yarn-5.5.0
 
     > hadoop version
     Hadoop 2.4.1
@@ -49,7 +54,7 @@ Each command should be self-explanatory. The typical usage scenario is:
 This is a _one-time_ action; if you already have Elasticsearch at hand, deploy it under `downloads` folder. To wit:
 
     > hadoop jar elasticsearch-yarn-<version> -download-es
-    Downloading Elasticsearch 5.3.0
+    Downloading Elasticsearch 5.5.0
     Downloading ......................................................................................DONE
 
 ### Provision Elasticsearch into HDFS

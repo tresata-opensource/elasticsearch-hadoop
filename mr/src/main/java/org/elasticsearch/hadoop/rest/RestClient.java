@@ -84,7 +84,7 @@ public class RestClient implements Closeable, StatsAware {
 
     private final Stats stats = new Stats();
 
-    public enum HEALTH {
+    public enum Health {
         RED, YELLOW, GREEN
     }
 
@@ -514,9 +514,14 @@ public class RestClient implements Closeable, StatsAware {
         // NB: dynamically get the stats since the transport can change
         long start = network.transportStats().netTotalTime;
         try {
+            BytesArray body;
+            if (internalVersion.onOrAfter(EsMajorVersion.V_2_X)) {
+                body = new BytesArray("{\"scroll_id\":\"" + scrollId + "\"}");
+            } else {
+                body = new BytesArray(scrollId);
+            }
             // use post instead of get to avoid some weird encoding issues (caused by the long URL)
-            InputStream is = execute(POST, "_search/scroll?scroll=" + scrollKeepAlive.toString(),
-                    new BytesArray("{\"scroll_id\":\"" + scrollId + "\"}")).body();
+            InputStream is = execute(POST, "_search/scroll?scroll=" + scrollKeepAlive.toString(), body).body();
             stats.scrollTotal++;
             return is;
         } finally {
@@ -530,22 +535,45 @@ public class RestClient implements Closeable, StatsAware {
         return (res.status() == HttpStatus.OK ? true : false);
     }
     public boolean deleteScroll(String scrollId) {
-        Request req = new SimpleRequest(DELETE, null, "_search/scroll",
-                new BytesArray(("{\"scroll_id\":[\"" + scrollId + "\"]}").getBytes(StringUtils.UTF_8)));
+        BytesArray body;
+        if (internalVersion.onOrAfter(EsMajorVersion.V_2_X)) {
+            body = new BytesArray(("{\"scroll_id\":[\"" + scrollId + "\"]}").getBytes(StringUtils.UTF_8));
+        } else {
+            body = new BytesArray(scrollId.getBytes(StringUtils.UTF_8));
+        }
+        Request req = new SimpleRequest(DELETE, null, "_search/scroll", body);
         Response res = executeNotFoundAllowed(req);
         return (res.status() == HttpStatus.OK ? true : false);
     }
 
-    public boolean exists(String indexOrType) {
+    public boolean documentExists(String index, String type, String id) {
+        return exists(index + "/" + type + "/" + id);
+    }
+
+    public boolean typeExists(String index, String type) {
+        String indexType;
+        if (internalVersion.onOrAfter(EsMajorVersion.V_5_X)) {
+            indexType = index + "/_mapping/" + type;
+        } else {
+            indexType = index + "/" + type;
+        }
+        return exists(indexType);
+    }
+
+    public boolean indexExists(String index) {
+        return exists(index);
+    }
+
+    private boolean exists(String indexOrType) {
         Request req = new SimpleRequest(HEAD, null, indexOrType);
         Response res = executeNotFoundAllowed(req);
 
         return (res.status() == HttpStatus.OK ? true : false);
     }
 
-    public boolean touch(String indexOrType) {
-        if (!exists(indexOrType)) {
-            Response response = execute(PUT, indexOrType, false);
+    public boolean touch(String index) {
+        if (!indexExists(index)) {
+            Response response = execute(PUT, index, false);
 
             if (response.hasFailed()) {
                 String msg = null;
@@ -635,7 +663,17 @@ public class RestClient implements Closeable, StatsAware {
         return EsMajorVersion.parse(result.get("number"));
     }
 
-    public boolean health(String index, HEALTH health, TimeValue timeout) {
+    public Health getHealth(String index) {
+        StringBuilder sb = new StringBuilder("/_cluster/health/");
+        sb.append(index);
+        String status = get(sb.toString(), "status");
+        if (status == null) {
+            throw new EsHadoopIllegalStateException("Could not determine index health, returned status was null. Bailing out...");
+        }
+        return Health.valueOf(status.toUpperCase());
+    }
+
+    public boolean waitForHealth(String index, Health health, TimeValue timeout) {
         StringBuilder sb = new StringBuilder("/_cluster/health/");
         sb.append(index);
         sb.append("?wait_for_status=");

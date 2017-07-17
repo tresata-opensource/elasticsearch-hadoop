@@ -22,6 +22,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.elasticsearch.hadoop.EsHadoopException;
 import org.elasticsearch.hadoop.EsHadoopIllegalArgumentException;
+import org.elasticsearch.hadoop.EsHadoopIllegalStateException;
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions;
 import org.elasticsearch.hadoop.cfg.HadoopSettingsManager;
 import org.elasticsearch.hadoop.cfg.InternalConfigurationOptions;
@@ -45,12 +46,41 @@ import java.util.List;
 
 public abstract class InitializationUtils {
 
+    private static final Log LOG = LogFactory.getLog(InitializationUtils.class);
+
     public static void checkIdForOperation(Settings settings) {
         String operation = settings.getOperation();
 
         if (ConfigurationOptions.ES_OPERATION_UPDATE.equals(operation)) {
             Assert.isTrue(StringUtils.hasText(settings.getMappingId()),
                     String.format("Operation [%s] requires an id but none (%s) was specified", operation, ConfigurationOptions.ES_MAPPING_ID));
+        }
+    }
+
+    public static void checkIndexNameForRead(Settings settings) {
+        Resource readResource = new Resource(settings, true);
+        if (readResource.index().contains("{") && readResource.index().contains("}")) {
+            throw new EsHadoopIllegalArgumentException("Cannot read indices that have curly brace field extraction patterns in them: " + readResource.index());
+        }
+    }
+
+    public static void checkIndexStatus(Settings settings) {
+        if (!settings.getIndexReadAllowRedStatus()) {
+            RestClient bootstrap = new RestClient(settings);
+            Resource readResource = new Resource(settings, true);
+
+            try {
+                if (bootstrap.indexExists(readResource.index())) {
+                    RestClient.Health status = bootstrap.getHealth(readResource.index());
+                    if (status == RestClient.Health.RED) {
+                        throw new EsHadoopIllegalStateException("Index specified [" + readResource.index() + "] is either red or " +
+                                "includes an index that is red, and thus all requested data cannot be safely and fully loaded. " +
+                                "Bailing out...");
+                    }
+                }
+            } finally {
+                bootstrap.close();
+            }
         }
     }
 
@@ -223,8 +253,22 @@ public abstract class InitializationUtils {
             Assert.isTrue(settings.getMappingExcludes().isEmpty(), "When writing data as JSON, the field exclusion feature is ignored. This is most likely not what the user intended. Bailing out...");
         }
 
+        if (StringUtils.hasText(settings.getMappingTtl())) {
+            LOG.warn("Setting [" + ConfigurationOptions.ES_MAPPING_TTL + "] is deprecated! Support for [ttl] on " +
+                    "indexing and update requests has been removed in ES 6.x and above!");
+        }
+        if (StringUtils.hasText(settings.getMappingTimestamp())) {
+            LOG.warn("Setting [" + ConfigurationOptions.ES_MAPPING_TIMESTAMP + "] is deprecated! Support for " +
+                    "[timestamp] on indexing and update requests has been removed in ES 6.x and above!");
+        }
+
         // Early attempt to catch the internal field filtering clashing with user specified field filtering
         SettingsUtils.determineSourceFields(settings); // ignore return, just checking for the throw.
+    }
+
+    public static void validateSettingsForReading(Settings settings) {
+        checkIndexNameForRead(settings);
+        checkIndexStatus(settings);
     }
 
     public static EsMajorVersion discoverEsVersion(Settings settings, Log log) {

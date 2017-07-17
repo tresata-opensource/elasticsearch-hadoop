@@ -1,3 +1,6 @@
+import org.apache.tools.ant.DefaultLogger
+import org.gradle.internal.jvm.Jvm
+
 description = 'Elasticsearch for Apache Hadoop'
 
 buildscript {
@@ -22,6 +25,11 @@ allprojects {
       // Hive depends on JDO ec2 missing from Maven Central
       maven { url "http://www.datanucleus.org/downloads/maven2" }
       maven { url "http://oss.sonatype.org/content/groups/public/" }
+
+      // For Elasticsearch snapshots.
+      maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
+      // For Lucene Snapshots. See org.elasticsearch.gradle.BuildPlugin#configureRepositories for why we may need this.
+      maven { url "http://s3.amazonaws.com/download.elasticsearch.org/lucenesnapshots/89f6d17" }
     }
 
     apply plugin: "java"
@@ -199,16 +207,17 @@ allprojects { project ->
 
     dependencies {
         // makes eclipse classpath easier
-        testCompile "org.elasticsearch:elasticsearch:$esVersion"
+        testCompile("org.elasticsearch:elasticsearch:$esVersion") {
+            exclude group: "org.apache.logging.log4j", module: "log4j-api"
+        }
         testRuntime "org.slf4j:slf4j-log4j12:1.7.6"
-//        testRuntime "log4j:log4j:$log4jVersion"
         testRuntime "org.apache.logging.log4j:log4j-api:$log4jVersion"
         testRuntime "org.apache.logging.log4j:log4j-core:$log4jVersion"
         testRuntime "org.apache.logging.log4j:log4j-1.2-api:$log4jVersion"
         testRuntime "net.java.dev.jna:jna:4.2.2"
         //testCompile "org.elasticsearch.module:lang-groovy:$esVersion"
         testCompile "org.codehaus.groovy:groovy:$groovyVersion:indy"
-        testCompile "org.elasticsearch.plugin:transport-netty3-client:$esVersion"
+//        testCompile "org.elasticsearch.plugin:transport-netty4-client:$esVersion"
         testRuntime "org.locationtech.spatial4j:spatial4j:0.6"
         testRuntime "com.vividsolutions:jts:1.13"
         
@@ -231,11 +240,15 @@ allprojects { project ->
         force "org.codehaus.jackson:jackson-mapper-asl:$jacksonVersion", "org.codehaus.jackson:jackson-core-asl:$jacksonVersion"
         // used when using Elastic non-shaded version
         force "commons-cli:commons-cli:1.2"
-        
+
         eachDependency { details ->
             // for slf4j use each dependency since there are so many variants
             if (details.requested.name.contains("slf4j-")) {
                     details.useVersion "1.7.6"
+            }
+            // log4j needs careful tending with the version
+            if (details.requested.name.contains("org.apache.logging.log4j") && details.requested.name.contains("log4j-")) {
+                details.useVersion log4jVersion
             }
             if (details.requested.name.equals("servlet-api")) {
                 details.useTarget group: "org.eclipse.jetty.orbit", name: "javax.servlet", version: "3.0.0.v201112011016"
@@ -376,6 +389,21 @@ configure(rootProject) {
     }
 }
 
+static String findJavaHome() {
+    String javaHome = System.getenv('JAVA_HOME')
+    if (javaHome == null) {
+        if (System.getProperty("idea.active") != null || System.getProperty("eclipse.launcher") != null) {
+            // intellij doesn't set JAVA_HOME, so we use the jdk gradle was run with
+            javaHome = org.gradle.internal.jvm.Jvm.current().javaHome
+        } else {
+            throw new GradleException('JAVA_HOME must be set to build Elasticsearch')
+        }
+    }
+    return javaHome
+}
+
+project.ext.javaHome = findJavaHome()
+
 allprojects { project ->
     task integrationTest(type: Test, dependsOn: rootProject.hadoopTestingJar) {
         testClassesDir = sourceSets.itest.output.classesDir
@@ -413,6 +441,14 @@ allprojects { project ->
                 System.setProperty("log4j.configuration", "$nullLog4jConfig")
             }
         }
+    }
+
+    // Only add cluster settings if it's not the root project
+    if (project != rootProject) {
+        logger.info "Configuring ${project.name} integrationTest task to use ES Fixture"
+        // Create the cluster fixture around the integration test.
+        // There's probably a more elegant way to do this in Gradle
+        apply from: "$rootDir/cluster.gradle"
     }
 }
 
@@ -575,13 +611,22 @@ def baseSparkProject(target, sparkVersion) {
             memoryMaximumSize = '1g'
             jvmArgs = ['-XX:MaxPermSize=512m']
         }
-        scalaCompileOptions.useAnt = false
+        scalaCompileOptions.additionalParameters = [
+            "-feature",
+            "-unchecked",
+            "-deprecation",
+            "-Xfuture",
+            "-Yno-adapted-args",
+            "-Ywarn-dead-code",
+            "-Ywarn-numeric-widen",
+            "-Ywarn-value-discard"
+        ]
 
         sourceCompatibility = 1.6
         targetCompatibility = 1.6
     }
     
-    println "Using Scala $scalaMajorVersion [$scalaVersion]"
+    println "Spark $sparkVersion compiled using Scala $scalaMajorVersion [$scalaVersion]"
 
     // when using Scala 2.11 use a different folder to cache the artifacts between builds
     if (scalaVer == "211") {

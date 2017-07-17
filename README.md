@@ -5,7 +5,7 @@ Supports [Map/Reduce](#mapreduce), [Cascading](#cascading), [Apache Hive](#apach
 See  [project page](http://www.elastic.co/products/hadoop/) and [documentation](http://www.elastic.co/guide/en/elasticsearch/hadoop/current/index.html) for detailed information.
 
 ## Requirements
-Elasticsearch (__1.x__ or higher (2.x _highly_ recommended)) cluster accessible through [REST][]. That's it!
+Elasticsearch (__1.x__ or higher (5.x _highly_ recommended)) cluster accessible through [REST][]. That's it!
 Significant effort has been invested to create a small, dependency-free, self-contained jar that can be downloaded and put to use without any dependencies. Simply make it available to your job classpath and you're set.
 For a certain library, see the dedicated [chapter](http://www.elastic.co/guide/en/elasticsearch/hadoop/current/requirements.html).
 
@@ -17,14 +17,14 @@ ES-Hadoop 2.0.x and 2.1.x are compatible with Elasticsearch __1.X__ *only*
 
 ## Installation
 
-### Stable Release (currently `5.3.0`)
+### Stable Release (currently `5.5.0`)
 Available through any Maven-compatible tool:
 
 ```xml
 <dependency>
   <groupId>org.elasticsearch</groupId>
   <artifactId>elasticsearch-hadoop</artifactId>
-  <version>5.3.0</version>
+  <version>5.5.0</version>
 </dependency>
 ```
 or as a stand-alone [ZIP](http://www.elastic.co/downloads/hadoop).
@@ -36,7 +36,7 @@ Grab the latest nightly build from the [repository](http://oss.sonatype.org/cont
 <dependency>
   <groupId>org.elasticsearch</groupId>
   <artifactId>elasticsearch-hadoop</artifactId>
-  <version>5.3.1.BUILD-SNAPSHOT</version>
+  <version>5.5.1.BUILD-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -54,9 +54,9 @@ or [build](#building-the-source) the project yourself.
 
 We do build and test the code on _each_ commit.
 
-### Hadoop 2.0/YARN
+### Supported Hadoop Version
 
-Already supported - it does not matter if you are using Hadoop 1.x or 2.x, the same jar works across both Hadoop environments.
+Hadoop 1.x as well as the "old" api (mapred) are deprecated in 5.5 and will be removed in 6.0.
 More information in this [section](http://www.elastic.co/guide/en/elasticsearch/hadoop/current/install.html).
 
 ## Feedback / Q&A
@@ -93,9 +93,12 @@ For basic, low-level or performance-sensitive environments, ES-Hadoop provides d
 (either by bundling the library along - it's ~300kB and there are no-dependencies), using the [DistributedCache][] or by provisioning the cluster manually.
 See the [documentation](http://www.elastic.co/guide/en/elasticsearch/hadoop/current/index.html) for more information.
 
-Note that es-hadoop supports both the so-called 'old' and the 'new' API through its `EsInputFormat` and `EsOutputFormat` classes.
+Note that support of the (old) 'mapred' API is deprecated as of 5.5 and will be removed in 6.0. 
 
 ### 'Old' (`org.apache.hadoop.mapred`) API
+
+#### !!! DEPRECATED IN 5.5 !!!
+Support of the (old) 'mapred' API is deprecated as of 5.5 and will be removed in 6.0.
 
 ### Reading
 To read data from ES, configure the `EsInputFormat` on your job configuration along with the relevant [properties](#configuration-properties):

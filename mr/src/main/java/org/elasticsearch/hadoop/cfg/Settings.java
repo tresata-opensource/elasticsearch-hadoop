@@ -152,6 +152,10 @@ public abstract class Settings {
         return getProperty(INTERNAL_ES_TARGET_FIELDS);
     }
 
+    public boolean getExcludeSource() {
+        return Booleans.parseBoolean(getProperty(INTERNAL_ES_EXCLUDE_SOURCE, INTERNAL_ES_EXCLUDE_SOURCE_DEFAULT));
+    }
+
     public String getSerializerValueWriterClassName() {
         return getProperty(ES_SERIALIZATION_WRITER_VALUE_CLASS);
     }
@@ -170,6 +174,10 @@ public abstract class Settings {
 
     public boolean getIndexReadMissingAsEmpty() {
         return Booleans.parseBoolean(getProperty(ES_INDEX_READ_MISSING_AS_EMPTY, ES_INDEX_READ_MISSING_AS_EMPTY_DEFAULT));
+    }
+
+    public boolean getIndexReadAllowRedStatus() {
+        return Booleans.parseBoolean(getProperty(ES_INDEX_READ_ALLOW_RED_STATUS, ES_INDEX_READ_ALLOW_RED_STATUS_DEFAULT));
     }
 
     public boolean getInputAsJson() {
