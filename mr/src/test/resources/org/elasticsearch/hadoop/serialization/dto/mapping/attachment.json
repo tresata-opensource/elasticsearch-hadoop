@@ -1,7 +1,11 @@
 {
-    "person" : {
-        "properties" : {
-            "my_attachment" : { "type" : "attachment" }
+    "index": {
+        "mappings": {
+            "person" : {
+                "properties" : {
+                    "my_attachment" : { "type" : "attachment" }
+                }
+            }
         }
     }
 }

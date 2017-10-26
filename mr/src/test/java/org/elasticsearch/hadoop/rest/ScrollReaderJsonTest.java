@@ -29,13 +29,17 @@ import org.codehaus.jackson.map.ObjectMapper;
 import org.elasticsearch.hadoop.serialization.ScrollReader;
 import org.elasticsearch.hadoop.serialization.ScrollReader.ScrollReaderConfig;
 import org.elasticsearch.hadoop.serialization.builder.JdkValueReader;
-import org.elasticsearch.hadoop.serialization.dto.mapping.Field;
+import org.elasticsearch.hadoop.serialization.dto.mapping.FieldParser;
+import org.elasticsearch.hadoop.serialization.dto.mapping.MappingSet;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
+import static org.elasticsearch.hadoop.serialization.dto.mapping.FieldParser.parseMapping;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(Parameterized.class)
@@ -91,8 +95,8 @@ public class ScrollReaderJsonTest {
     @Test
     public void testScrollWithNestedFields() throws IOException {
         InputStream stream = getClass().getResourceAsStream("scroll-source-mapping.json");
-        Field fl = Field.parseField(new ObjectMapper().readValue(stream, Map.class));
-        scrollCfg.rootField = fl;
+        MappingSet fl = FieldParser.parseMapping(new ObjectMapper().readValue(stream, Map.class));
+        scrollCfg.resolvedMapping = fl.getResolvedView();
         reader = new ScrollReader(scrollCfg);
         stream = getClass().getResourceAsStream("scroll-source.json");
 
@@ -164,11 +168,66 @@ public class ScrollReaderJsonTest {
         }
     }
 
+    @Test
+    public void testScrollWithJoinField() throws Exception {
+        Map value = new ObjectMapper().readValue(getClass().getResourceAsStream("scroll-join-source-mapping.json"), Map.class);
+        MappingSet mappings = parseMapping(value);
+        // Make our own scroll reader, that ignores unmapped values like the rest of the code
+        ScrollReader myReader = new ScrollReader(new ScrollReaderConfig(new JdkValueReader(), mappings.getResolvedView(), readMetadata, metadataField, readAsJson, false));
+
+        InputStream stream = getClass().getResourceAsStream("scroll-join-source.json");
+        List<Object[]> read = myReader.read(stream).getHits();
+        assertEquals(7, read.size());
+
+        {
+            String row = (String) read.get(0)[1];
+            assertTrue(row.contains("\"joiner\": \"company\""));
+        }
+
+        {
+            String row = (String) read.get(1)[1];
+            assertTrue(row.contains("joiner"));
+            assertTrue(row.contains("\"name\": \"employee\""));
+            assertTrue(row.contains("\"parent\": \"1\""));
+        }
+
+        {
+            String row = (String) read.get(2)[1];
+            assertTrue(row.contains("\"joiner\": \"company\""));
+        }
+
+        {
+            String row = (String) read.get(3)[1];
+            assertTrue(row.contains("joiner"));
+            assertTrue(row.contains("\"name\": \"employee\""));
+            assertTrue(row.contains("\"parent\": \"2\""));
+        }
+
+        {
+            String row = (String) read.get(4)[1];
+            assertTrue(row.contains("joiner"));
+            assertTrue(row.contains("\"name\": \"employee\""));
+            assertTrue(row.contains("\"parent\": \"2\""));
+        }
+
+        {
+            String row = (String) read.get(5)[1];
+            assertTrue(row.contains("\"joiner\": \"company\""));
+        }
+
+        {
+            String row = (String) read.get(6)[1];
+            assertTrue(row.contains("joiner"));
+            assertTrue(row.contains("\"name\": \"employee\""));
+            assertTrue(row.contains("\"parent\": \"3\""));
+        }
+    }
+
     @Test(expected = EsHadoopParsingException.class)
     public void testScrollWithParsingValueException() throws IOException {
         InputStream stream = getClass().getResourceAsStream("numbers-as-strings-mapping.json");
-        Field fl = Field.parseField(new ObjectMapper().readValue(stream, Map.class));
-        scrollCfg.rootField = fl;
+        MappingSet fl = FieldParser.parseMapping(new ObjectMapper().readValue(stream, Map.class));
+        scrollCfg.resolvedMapping = fl.getResolvedView();
         scrollCfg.returnRawJson = false;
         // parsing the doc (don't just read it as json) yields parsing exception
         reader = new ScrollReader(scrollCfg);

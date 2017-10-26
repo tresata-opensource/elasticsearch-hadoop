@@ -18,15 +18,14 @@
  */
 package org.elasticsearch.spark.sql
 
-import java.util.{ Map => JMap }
-import org.apache.spark.annotation.DeveloperApi
+import java.util.{Map => JMap}
+
 import org.apache.spark.sql.types.ArrayType
 import org.apache.spark.sql.types.DataTypes._
 import org.apache.spark.sql.types.StructType
 import org.codehaus.jackson.map.ObjectMapper
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions._
 import org.elasticsearch.hadoop.cfg.Settings
-import org.elasticsearch.hadoop.serialization.dto.mapping.Field
 import org.elasticsearch.hadoop.util.TestSettings
 import org.elasticsearch.spark.sql.SchemaUtils._
 import org.junit.Assert.assertEquals
@@ -35,6 +34,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.util.Collections
+
+import org.elasticsearch.hadoop.serialization.dto.mapping.FieldParser
 
 class SchemaUtilsTest {
 
@@ -150,6 +151,36 @@ class SchemaUtilsTest {
   }
 
   @Test
+  def testConvertToStructWithJoinField() {
+    val mapping =
+      """{
+        |  "join": {
+        |    "properties": {
+        |      "my_join": {
+        |        "type": "join",
+        |        "relations": {
+        |          "my_parent": "my_child"
+        |        }
+        |      }
+        |    }
+        |  }
+        |}
+      """.stripMargin
+
+    val struct = getStruct(mapping)
+    assertTrue(struct.fieldNames.contains("my_join"))
+
+    val nested = struct("my_join").dataType
+    assertEquals("struct", nested.typeName)
+
+    val arr = nested.asInstanceOf[StructType]
+    assertTrue(arr.fieldNames.contains("name"))
+    assertTrue(arr.fieldNames.contains("parent"))
+    assertEquals(StringType, arr("name").dataType)
+    assertEquals(StringType, arr("parent").dataType)
+  }
+
+  @Test
   def testDetectRowInfoSimple() {
     val mapping = """{ "array-mapping-top-level": {
     | "properties" : {
@@ -217,9 +248,17 @@ class SchemaUtilsTest {
     assertEquals("one,two", info._1.getProperty("arr"))
     assertEquals("3", info._2.getProperty("arr"))
   }
-  
+
+  private def wrapMappingAsResponse(mapping: String): String =
+    s"""{
+       |  "index": {
+       |    "mappings": $mapping
+       |  }
+       |}
+       """.stripMargin
+
   private def fieldFromMapping(mapping: String) = {
-    Field.parseField(new ObjectMapper().readValue(mapping, classOf[JMap[String, Object]]))
+    FieldParser.parseMapping(new ObjectMapper().readValue(wrapMappingAsResponse(mapping), classOf[JMap[String, Object]])).getResolvedView
   }
   
   private def getStruct(mapping: String) = {
