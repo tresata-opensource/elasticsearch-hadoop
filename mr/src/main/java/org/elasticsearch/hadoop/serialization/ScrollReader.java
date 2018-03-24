@@ -131,8 +131,10 @@ public class ScrollReader {
     }
 
     public static class Scroll {
-        static final Scroll EMPTY = new Scroll("", -1l, Collections.<Object[]> emptyList());
-        
+        static Scroll empty(String scrollId) {
+            return new Scroll(scrollId, -1L, Collections.<Object[]> emptyList());
+        }
+
         private final String scrollId;
         private final long total;
         private final List<Object[]> hits;
@@ -188,7 +190,11 @@ public class ScrollReader {
         }
 
         public ScrollReaderConfig(ValueReader reader) {
-            this(reader, null, false, "_metadata", false, false, Collections.<String> emptyList(), Collections.<String> emptyList(), Collections.<String> emptyList());
+            this(false, reader);
+        }
+
+        public ScrollReaderConfig(boolean readMetadata, ValueReader reader) {
+            this(reader, null, readMetadata, "_metadata", false, false, Collections.<String> emptyList(), Collections.<String> emptyList(), Collections.<String> emptyList());
         }
 
         public ScrollReaderConfig(ValueReader reader, Mapping resolvedMapping, Settings cfg) {
@@ -279,7 +285,7 @@ public class ScrollReader {
         long totalHits = hitsTotal();
         // check hits/total
         if (totalHits == 0) {
-            return Scroll.EMPTY;
+            return Scroll.empty(scrollId);
         }
 
         // move to hits/hits

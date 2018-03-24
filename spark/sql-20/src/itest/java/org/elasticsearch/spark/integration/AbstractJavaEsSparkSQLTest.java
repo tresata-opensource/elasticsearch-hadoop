@@ -100,7 +100,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
     public void testEsDataset1Write() throws Exception {
         Dataset<Row> dataset = artistsAsDataset();
 
-		String target = "sparksql-test/scala-basic-write";
+		String target = "sparksql-test-scala-basic-write/data";
         JavaEsSparkSQL.saveToEs(dataset, target);
 		assertTrue(RestUtils.exists(target));
 		assertThat(RestUtils.get(target + "/_search?"), containsString("345"));
@@ -110,7 +110,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
     public void testEsDataset1WriteWithId() throws Exception {
         Dataset<Row> dataset = artistsAsDataset();
 
-		String target = "sparksql-test/scala-basic-write-id-mapping";
+		String target = "sparksql-test-scala-basic-write-id-mapping/data";
         JavaEsSparkSQL.saveToEs(dataset, target,
 				ImmutableMap.of(ES_MAPPING_ID, "id"));
 		assertTrue(RestUtils.exists(target));
@@ -122,7 +122,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
     public void testEsSchemaRDD1WriteWithMappingExclude() throws Exception {
         Dataset<Row> dataset = artistsAsDataset();
 
-        String target = "sparksql-test/scala-basic-write-exclude-mapping";
+        String target = "sparksql-test-scala-basic-write-exclude-mapping/data";
         JavaEsSparkSQL.saveToEs(dataset, target,
                 ImmutableMap.of(ES_MAPPING_EXCLUDE, "url"));
         assertTrue(RestUtils.exists(target));
@@ -131,7 +131,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
     
 	@Test
     public void testEsDataset2Read() throws Exception {
-		String target = "sparksql-test/scala-basic-write";
+		String target = "sparksql-test-scala-basic-write/data";
 
         // Dataset<Row> dataset = JavaEsSparkSQL.esDF(sqc, target);
         Dataset<Row> dataset = sqc.read().format("es").load(target);
@@ -153,18 +153,18 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
 	}
 
 	@Test
-	public void testEsDatasetReadMetadata() throws Exception {
-		String target = "sparksql-test/scala-basic-write";
+	public void testEsDataset2ReadMetadata() throws Exception {
+		String target = "sparksql-test-scala-basic-write/data";
 
 		Dataset<Row> dataset = sqc.read().format("es").option("es.read.metadata", "true").load(target).where("id = 1");
 
 		// Since _metadata field isn't a part of _source,
 		// we want to check that it could be fetched in any position.
-		assertEquals("sparksql-test", dataset.selectExpr("_metadata['_index']").takeAsList(1).get(0).get(0));
-		assertEquals("sparksql-test", dataset.selectExpr("_metadata['_index']", "name").takeAsList(1).get(0).get(0));
+		assertEquals("sparksql-test-scala-basic-write", dataset.selectExpr("_metadata['_index']").takeAsList(1).get(0).get(0));
+		assertEquals("sparksql-test-scala-basic-write", dataset.selectExpr("_metadata['_index']", "name").takeAsList(1).get(0).get(0));
 		assertEquals("MALICE MIZER", dataset.selectExpr("_metadata['_index']", "name").takeAsList(1).get(0).get(1));
 		assertEquals("MALICE MIZER", dataset.selectExpr("name", "_metadata['_index']").takeAsList(1).get(0).get(0));
-		assertEquals("sparksql-test", dataset.selectExpr("name", "_metadata['_index']").takeAsList(1).get(0).get(1));
+		assertEquals("sparksql-test-scala-basic-write", dataset.selectExpr("name", "_metadata['_index']").takeAsList(1).get(0).get(1));
 	}
 
     private Dataset<Row> artistsAsDataset() throws Exception {

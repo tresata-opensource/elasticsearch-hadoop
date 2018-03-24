@@ -22,7 +22,9 @@ package org.elasticsearch.hadoop.integration.hive;
 import org.apache.hive.service.cli.HiveSQLException;
 import org.elasticsearch.hadoop.QueryTestParams;
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions;
+import org.elasticsearch.hadoop.mr.EsAssume;
 import org.elasticsearch.hadoop.mr.RestUtils;
+import org.elasticsearch.hadoop.util.EsMajorVersion;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -62,7 +64,7 @@ public class AbstractHiveReadJsonTest {
     @Before
     public void before() throws Exception {
         provisionEsLib();
-        RestUtils.refresh("json-hive");
+        RestUtils.refresh("json-hive*");
     }
 
     @After
@@ -75,7 +77,7 @@ public class AbstractHiveReadJsonTest {
     public void basicLoad() throws Exception {
 
         String create = "CREATE EXTERNAL TABLE jsonartistsread" + testInstance + " (data INT, garbage INT, garbage2 STRING) "
-                + tableProps("json-hive/artists", "'es.output.json' = 'true'", "'es.mapping.names'='garbage2:refuse'");
+                + tableProps("json-hive-artists/data", "'es.output.json' = 'true'", "'es.mapping.names'='garbage2:refuse'");
 
         String select = "SELECT * FROM jsonartistsread" + testInstance;
 
@@ -91,7 +93,7 @@ public class AbstractHiveReadJsonTest {
     public void basicLoadWithNameMappings() throws Exception {
 
         String create = "CREATE EXTERNAL TABLE jsonartistsread" + testInstance + " (refuse INT, garbage INT, data STRING) "
-                + tableProps("json-hive/artists", "'es.output.json' = 'true'", "'es.mapping.names'='data:boomSomethingYouWerentExpecting'");
+                + tableProps("json-hive-artists/data", "'es.output.json' = 'true'", "'es.mapping.names'='data:boomSomethingYouWerentExpecting'");
 
         String select = "SELECT * FROM jsonartistsread" + testInstance;
 
@@ -107,7 +109,7 @@ public class AbstractHiveReadJsonTest {
     public void basicLoadWithNoGoodCandidateField() throws Exception {
 
         String create = "CREATE EXTERNAL TABLE jsonartistsread" + testInstance + " (refuse INT, garbage INT) "
-                + tableProps("json-hive/artists", "'es.output.json' = 'true'");
+                + tableProps("json-hive-artists/data", "'es.output.json' = 'true'");
 
         String select = "SELECT * FROM jsonartistsread" + testInstance;
 
@@ -131,8 +133,9 @@ public class AbstractHiveReadJsonTest {
 
     @Test
     public void testParentChild() throws Exception {
+        EsAssume.versionOnOrBefore(EsMajorVersion.V_5_X, "Parent Child Disabled in 6.0");
         String create = "CREATE EXTERNAL TABLE jsonchildread" + testInstance + " (data STRING) "
-                + tableProps("json-hive/child", "'es.index.read.missing.as.empty' = 'true'", "'es.output.json' = 'true'");
+                + tableProps("json-hive-pc/child", "'es.index.read.missing.as.empty' = 'true'", "'es.output.json' = 'true'");
 
         String select = "SELECT * FROM jsonchildread" + testInstance;
 
@@ -150,7 +153,7 @@ public class AbstractHiveReadJsonTest {
 
         String create = "CREATE EXTERNAL TABLE jsonartistscollisionread" + testInstance + " (data INT, garbage INT, garbage2 STRING) "
                 + tableProps(
-                    "json-hive/artists",
+                    "json-hive-artists/data",
                     "'es.output.json' = 'true'",
                     "'es.read.source.filter'='name'"
                 );

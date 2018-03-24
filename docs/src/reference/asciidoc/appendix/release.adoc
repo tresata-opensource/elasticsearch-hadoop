@@ -5,7 +5,26 @@
 --
 This section summarizes the changes in each release.
 
-* <<eshadoop-5.6.6>>
+[float]
+[[release-notes-6]]
+===== 6.x
+* <<eshadoop-6.2.2>>
+* <<eshadoop-6.2.1>>
+* <<eshadoop-6.2.0>>
+* <<eshadoop-6.1.1>>
+* <<eshadoop-6.1.0>>
+* <<eshadoop-6.0.1>>
+* <<eshadoop-6.0.0>>
+* <<eshadoop-6.0.0-rc-2>>
+* <<eshadoop-6.0.0-rc-1>>
+* <<eshadoop-6.0.0-beta-2>>
+* <<eshadoop-6.0.0-beta-1>>
+* <<eshadoop-6.0.0-alpha-2>>
+* <<eshadoop-6.0.0-alpha-1>>
+
+[float]
+[[release-notes-5]]
+===== 5.x
 * <<eshadoop-5.6.5>>
 * <<eshadoop-5.6.4>>
 * <<eshadoop-5.6.3>>
@@ -81,7 +100,19 @@ http://github.com/elastic/elasticsearch-hadoop/issues/XXX[#XXX]
 
 ////////////////////////
 
-include::release-notes/5.6.6.adoc[]
+include::release-notes/6.2.2.adoc[]
+include::release-notes/6.2.1.adoc[]
+include::release-notes/6.2.0.adoc[]
+include::release-notes/6.1.1.adoc[]
+include::release-notes/6.1.0.adoc[]
+include::release-notes/6.0.1.adoc[]
+include::release-notes/6.0.0.adoc[]
+include::release-notes/6.0.0-rc-2.adoc[]
+include::release-notes/6.0.0-rc-1.adoc[]
+include::release-notes/6.0.0-beta-2.adoc[]
+include::release-notes/6.0.0-beta-1.adoc[]
+include::release-notes/6.0.0-alpha-2.adoc[]
+include::release-notes/6.0.0-alpha-1.adoc[]
 include::release-notes/5.6.5.adoc[]
 include::release-notes/5.6.4.adoc[]
 include::release-notes/5.6.3.adoc[]

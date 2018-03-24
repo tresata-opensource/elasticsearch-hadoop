@@ -243,7 +243,7 @@ public abstract class InitializationUtils {
         boolean alreadyRestricted = false;
         boolean[] restrictions = {settings.getNodesClientOnly(), settings.getNodesDataOnly(), settings.getNodesIngestOnly()};
         for (boolean restriction : restrictions) {
-            Assert.isTrue(!(alreadyRestricted && restriction), "Use either client-only or data-only or ingest-only nodes but not a combination");
+            Assert.isTrue((alreadyRestricted && restriction) == false, "Use either client-only or data-only or ingest-only nodes but not a combination");
             alreadyRestricted = alreadyRestricted || restriction;
         }
 
@@ -253,13 +253,13 @@ public abstract class InitializationUtils {
             Assert.isTrue(settings.getMappingExcludes().isEmpty(), "When writing data as JSON, the field exclusion feature is ignored. This is most likely not what the user intended. Bailing out...");
         }
 
-        if (StringUtils.hasText(settings.getMappingTtl())) {
-            LOG.warn("Setting [" + ConfigurationOptions.ES_MAPPING_TTL + "] is deprecated! Support for [ttl] on " +
-                    "indexing and update requests has been removed in ES 6.x and above!");
-        }
-        if (StringUtils.hasText(settings.getMappingTimestamp())) {
-            LOG.warn("Setting [" + ConfigurationOptions.ES_MAPPING_TIMESTAMP + "] is deprecated! Support for " +
-                    "[timestamp] on indexing and update requests has been removed in ES 6.x and above!");
+        // Check to make sure user doesn't specify more than one script type
+        boolean hasScript = false;
+        String[] scripts = {settings.getUpdateScriptInline(), settings.getUpdateScriptFile(), settings.getUpdateScriptStored()};
+        for (String script: scripts) {
+            boolean isSet = StringUtils.hasText(script);
+            Assert.isTrue((hasScript && isSet) == false, "Multiple scripts are specified. Please specify only one via [es.update.script.inline], [es.update.script.file], or [es.update.script.stored]");
+            hasScript = hasScript || isSet;
         }
 
         // Early attempt to catch the internal field filtering clashing with user specified field filtering
@@ -269,6 +269,39 @@ public abstract class InitializationUtils {
     public static void validateSettingsForReading(Settings settings) {
         checkIndexNameForRead(settings);
         checkIndexStatus(settings);
+    }
+
+    public static void validateSettingsForWriting(Settings settings) {
+        EsMajorVersion version = settings.getInternalVersionOrThrow();
+
+        // Things that were removed in 6.x and forward
+        if (version.onOrAfter(EsMajorVersion.V_6_X)) {
+            // File Scripts
+            if (StringUtils.hasText(settings.getUpdateScriptFile())) {
+                throw new EsHadoopIllegalArgumentException("Cannot use file scripts on ES 6.x and above. Please use " +
+                        "stored scripts with [" + ConfigurationOptions.ES_UPDATE_SCRIPT_STORED + "] instead.");
+            }
+
+            // Timestamp and TTL in index/updates
+            if (StringUtils.hasText(settings.getMappingTimestamp())) {
+                throw new EsHadoopIllegalArgumentException("Cannot use timestamps on index/update requests in ES 6.x " +
+                        "and above. Please remove the [" + ConfigurationOptions.ES_MAPPING_TIMESTAMP + "] setting.");
+            }
+            if (StringUtils.hasText(settings.getMappingTtl())) {
+                throw new EsHadoopIllegalArgumentException("Cannot use TTL on index/update requests in ES 6.x and " +
+                        "above. Please remove the [" + ConfigurationOptions.ES_MAPPING_TTL + "] setting.");
+            }
+        } else {
+            if (StringUtils.hasText(settings.getMappingTtl())) {
+                LOG.warn("Setting [" + ConfigurationOptions.ES_MAPPING_TTL + "] is deprecated! Support for [ttl] on " +
+                        "indexing and update requests has been removed in ES 6.x and above!");
+            }
+            if (StringUtils.hasText(settings.getMappingTimestamp())) {
+                LOG.warn("Setting [" + ConfigurationOptions.ES_MAPPING_TIMESTAMP + "] is deprecated! Support for " +
+                        "[timestamp] on indexing and update requests has been removed in ES 6.x and above!");
+            }
+
+        }
     }
 
     public static EsMajorVersion discoverEsVersion(Settings settings, Log log) {

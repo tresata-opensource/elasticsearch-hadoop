@@ -62,6 +62,7 @@ public class AbstractHadoopBasicSparkTest implements Serializable {
 
     private transient final SparkConf conf = new SparkConf()
             .setAppName("basictest")
+            .set("spark.io.compression.codec", "lz4")
             .setAll(propertiesAsScalaMap(TestSettings.TESTING_PROPS));
     private transient SparkConf cfg = null;
     private transient JavaSparkContext sc;
@@ -120,12 +121,12 @@ public class AbstractHadoopBasicSparkTest implements Serializable {
 
         sc = new JavaSparkContext(cfg);
 
-        String target = "spark-test/hadoop-basic";
+        String target = "spark-test-hadoop-basic/data";
 
-        RestUtils.touch("spark-test");
+        RestUtils.touch("spark-test-hadoop-basic");
         RestUtils.postData(target, "{\"message\" : \"Hello World\",\"message_date\" : \"2014-05-25\"}".getBytes());
         RestUtils.postData(target, "{\"message\" : \"Goodbye World\",\"message_date\" : \"2014-05-25\"}".getBytes());
-        RestUtils.refresh("spark-test");
+        RestUtils.refresh("spark-test*");
 
         JobConf hdpConf = HdpBootstrap.hadoopConfig();
         hdpConf.set(ConfigurationOptions.ES_RESOURCE, target);

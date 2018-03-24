@@ -18,23 +18,18 @@
  */
 package org.elasticsearch.spark.sql
 
-import java.util.Arrays
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
+import javax.xml.bind.DatatypeConverter
 
-import scala.collection.JavaConverters.mapAsJavaMapConverter
-import scala.collection.mutable.LinkedHashMap
-import scala.collection.mutable.LinkedHashSet
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.Row
-import org.apache.spark.sql.SQLContext
-import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.SaveMode.Append
 import org.apache.spark.sql.SaveMode.ErrorIfExists
 import org.apache.spark.sql.SaveMode.Ignore
 import org.apache.spark.sql.SaveMode.Overwrite
+import org.apache.spark.sql.execution.streaming.Sink
 import org.apache.spark.sql.sources.And
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.sources.CreatableRelationProvider
@@ -53,16 +48,26 @@ import org.apache.spark.sql.sources.Or
 import org.apache.spark.sql.sources.PrunedFilteredScan
 import org.apache.spark.sql.sources.RelationProvider
 import org.apache.spark.sql.sources.SchemaRelationProvider
+import org.apache.spark.sql.sources.StreamSinkProvider
+import org.apache.spark.sql.streaming.OutputMode
 import org.apache.spark.sql.types.DateType
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.types.TimestampType
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.internal.SQLConf
 import org.elasticsearch.hadoop.EsHadoopIllegalArgumentException
 import org.elasticsearch.hadoop.EsHadoopIllegalStateException
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions
 import org.elasticsearch.hadoop.cfg.InternalConfigurationOptions
+import org.elasticsearch.hadoop.cfg.InternalConfigurationOptions.INTERNAL_TRANSPORT_POOLING_KEY
 import org.elasticsearch.hadoop.rest.InitializationUtils
 import org.elasticsearch.hadoop.rest.RestRepository
 import org.elasticsearch.hadoop.serialization.builder.JdkValueWriter
+import org.elasticsearch.hadoop.serialization.field.ConstantFieldExtractor
 import org.elasticsearch.hadoop.serialization.json.JacksonJsonGenerator
 import org.elasticsearch.hadoop.util.FastByteArrayOutputStream
 import org.elasticsearch.hadoop.util.IOUtils
@@ -71,11 +76,16 @@ import org.elasticsearch.hadoop.util.StringUtils
 import org.elasticsearch.hadoop.util.Version
 import org.elasticsearch.spark.cfg.SparkSettingsManager
 import org.elasticsearch.spark.serialization.ScalaValueWriter
-import javax.xml.bind.DatatypeConverter
+import org.elasticsearch.spark.sql.streaming.EsSparkSqlStreamingSink
+import org.elasticsearch.spark.sql.streaming.SparkSqlStreamingConfigs
+import org.elasticsearch.spark.sql.streaming.StructuredStreamingVersionLock
 
-import org.elasticsearch.hadoop.serialization.field.ConstantFieldExtractor
+import scala.collection.JavaConverters.mapAsJavaMapConverter
+import scala.collection.mutable.LinkedHashMap
+import scala.collection.mutable.{Map => MutableMap}
+import scala.collection.mutable.LinkedHashSet
 
-private[sql] class DefaultSource extends RelationProvider with SchemaRelationProvider with CreatableRelationProvider  {
+private[sql] class DefaultSource extends RelationProvider with SchemaRelationProvider with CreatableRelationProvider with StreamSinkProvider {
 
   Version.logVersion()
   
@@ -102,20 +112,101 @@ private[sql] class DefaultSource extends RelationProvider with SchemaRelationPro
     relation
   }
 
-  private def params(parameters: Map[String, String]) = {
+  override def createSink(sqlContext: SQLContext, parameters: Map[String, String], partitionColumns: Seq[String], outputMode: OutputMode): Sink = {
+    val sparkSession = sqlContext.sparkSession
+
+    // Verify compatiblity versions for alpha:
+    StructuredStreamingVersionLock.checkCompatibility(sparkSession)
+
+    // For now we only support Append style output mode
+    if (outputMode != OutputMode.Append()) {
+      throw new EsHadoopIllegalArgumentException("Append is only supported OutputMode for Elasticsearch. " +
+        s"Cannot continue with [$outputMode].")
+    }
+
+    // Should not support partitioning. We already allow people to split data into different
+    // indices with the index pattern functionality. Potentially could add this later if a need
+    // arises by appending patterns to the provided index, but that's probably feature overload.
+    if (partitionColumns != Nil) {
+      throw new EsHadoopIllegalArgumentException("Partition columns are not supported for Elasticsearch. " +
+        "If you need to partition your data by column values on Elasticsearch, please use an index pattern instead.")
+    }
+
+    // Add in the transport pooling key for this job
+    val mapConfig = MutableMap(parameters.toSeq: _*) += (INTERNAL_TRANSPORT_POOLING_KEY -> UUID.randomUUID().toString)
+    val jobSettings = new SparkSettingsManager()
+        .load(sqlContext.sparkContext.getConf)
+        .merge(streamParams(mapConfig.toMap, sparkSession).asJava)
+
+    InitializationUtils.checkIdForOperation(jobSettings)
+    InitializationUtils.checkIndexExistence(jobSettings)
+
+    new EsSparkSqlStreamingSink(sparkSession, jobSettings)
+  }
+
+  private[sql] def params(parameters: Map[String, String]) = {
     // '.' seems to be problematic when specifying the options
-    val params = parameters.map { case (k, v) => (k.replace('_', '.'), v)}. map { case (k, v) =>
+    val dottedParams = parameters.map { case (k, v) => (k.replace('_', '.'), v)}
+
+    // You can set the resource by using the "path", "resource", or "es.resource"/"es_resource" config keys.
+    // In rare circumstances (cough Hive+Spark integration cough) these settings can all be specified, and be set to different
+    // values. Instead of relying on the map's entry order to set the value, we will proactively retrieve the settings
+    // in the following order, falling back as needed:
+    //
+    // 1. "es.resource"
+    // 2. "resource"
+    // 3. "path"
+    //
+    // See https://github.com/elastic/elasticsearch-hadoop/issues/1082
+    val preferredResource = dottedParams.get(ConfigurationOptions.ES_RESOURCE)
+      .orElse(dottedParams.get("resource"))
+      .orElse(dottedParams.get("path"))
+
+    // Convert simple parameters into internal properties, and prefix other parameters
+    val processedParams = dottedParams.map { case (k, v) =>
       if (k.startsWith("es.")) (k, v)
-      else if (k == "path") (ConfigurationOptions.ES_RESOURCE, v)
+      else if (k == "path") (ConfigurationOptions.ES_RESOURCE, v) // This may not be the final value for this setting.
       else if (k == "pushdown") (Utils.DATA_SOURCE_PUSH_DOWN, v)
       else if (k == "strict") (Utils.DATA_SOURCE_PUSH_DOWN_STRICT, v)
       else if (k == "double.filtering") (Utils.DATA_SOURCE_KEEP_HANDLED_FILTERS, v)
       else ("es." + k, v)
     }
+
+    // Set the preferred resource if it was specified originally
+    val finalParams = preferredResource match {
+      case Some(resource) => processedParams + (ConfigurationOptions.ES_RESOURCE -> resource)
+      case None => processedParams
+    }
+
+    // validate path is available
+    finalParams.getOrElse(ConfigurationOptions.ES_RESOURCE_READ,
+      finalParams.getOrElse(ConfigurationOptions.ES_RESOURCE, throw new EsHadoopIllegalArgumentException("resource must be specified for Elasticsearch resources.")))
+
+    finalParams
+  }
+
+  private def streamParams(parameters: Map[String, String], sparkSession: SparkSession) = {
+    // '.' seems to be problematic when specifying the options
+    var params = parameters.map { case (k, v) => (k.replace('_', '.'), v)}. map { case (k, v) =>
+      if (k.startsWith("es.")) (k, v)
+      else if (k == "path") (ConfigurationOptions.ES_RESOURCE, v)
+      else if (k == "queryname") (SparkSqlStreamingConfigs.ES_INTERNAL_QUERY_NAME, v)
+      else if (k == "checkpointlocation") (SparkSqlStreamingConfigs.ES_INTERNAL_USER_CHECKPOINT_LOCATION, v)
+      else ("es." + k, v)
+    }
+
+    params = params + (SparkSqlStreamingConfigs.ES_INTERNAL_APP_NAME -> sparkSession.sparkContext.appName)
+    params = params + (SparkSqlStreamingConfigs.ES_INTERNAL_APP_ID -> sparkSession.sparkContext.applicationId)
+
+    sparkSession.conf.getOption(SQLConf.CHECKPOINT_LOCATION.key).foreach { loc =>
+      params = params + (SparkSqlStreamingConfigs.ES_INTERNAL_SESSION_CHECKPOINT_LOCATION -> loc)
+    }
+
     // validate path
-    params.getOrElse(ConfigurationOptions.ES_RESOURCE_READ, 
-        params.getOrElse(ConfigurationOptions.ES_RESOURCE, throw new EsHadoopIllegalArgumentException("resource must be specified for Elasticsearch resources.")))
-        
+    params.getOrElse(ConfigurationOptions.ES_RESOURCE_WRITE,
+      params.getOrElse(ConfigurationOptions.ES_RESOURCE,
+        throw new EsHadoopIllegalArgumentException("resource must be specified for Elasticsearch resources.")))
+
     params
   }
 }
@@ -504,6 +595,7 @@ private[sql] case class ElasticsearchRelation(parameters: Map[String, String], @
 
       // perform a scan-scroll delete
       val cfgCopy = cfg.copy()
+      InitializationUtils.discoverEsVersion(cfgCopy, Utils.LOGGER)
       InitializationUtils.setValueWriterIfNotSet(cfgCopy, classOf[JdkValueWriter], null)
       InitializationUtils.setFieldExtractorIfNotSet(cfgCopy, classOf[ConstantFieldExtractor], null) //throw away extractor
       cfgCopy.setProperty(ConfigurationOptions.ES_BATCH_FLUSH_MANUAL, "false")

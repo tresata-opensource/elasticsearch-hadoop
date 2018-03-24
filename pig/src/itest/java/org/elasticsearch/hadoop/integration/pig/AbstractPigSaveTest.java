@@ -23,6 +23,7 @@ import java.util.Date;
 import org.elasticsearch.hadoop.EsHadoopIllegalStateException;
 import org.elasticsearch.hadoop.Provisioner;
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions;
+import org.elasticsearch.hadoop.mr.EsAssume;
 import org.elasticsearch.hadoop.mr.RestUtils;
 import org.elasticsearch.hadoop.rest.RestClient;
 import org.elasticsearch.hadoop.util.EsMajorVersion;
@@ -261,7 +262,9 @@ public class AbstractPigSaveTest extends AbstractPigTests {
 
     @Test
     public void testParentChild() throws Exception {
-        RestUtils.putMapping("pig-pc/child", "org/elasticsearch/hadoop/integration/mr-child.json");
+        EsAssume.versionOnOrBefore(EsMajorVersion.V_5_X, "Parent Child Disabled in 6.0");
+        RestUtils.createMultiTypeIndex("pig-pc");
+        RestUtils.putMapping("pig-pc", "child", "org/elasticsearch/hadoop/integration/mr-child.json");
 
         String script =
                 "REGISTER "+ Provisioner.ESHADOOP_TESTING_JAR + ";" +
@@ -275,6 +278,7 @@ public class AbstractPigSaveTest extends AbstractPigTests {
 
     @Test
     public void testParentChildMapping() throws Exception {
+        EsAssume.versionOnOrBefore(EsMajorVersion.V_5_X, "Parent Child Disabled in 6.0");
         assertThat(RestUtils.getMapping("pig-pc/child").toString(),
                 VERSION.onOrAfter(V_5_X)
                         ? is("child=[id=LONG, links=TEXT, name=TEXT]")

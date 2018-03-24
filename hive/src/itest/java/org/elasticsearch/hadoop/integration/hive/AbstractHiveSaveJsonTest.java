@@ -24,7 +24,9 @@ import java.util.List;
 
 import org.apache.hive.service.cli.HiveSQLException;
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions;
+import org.elasticsearch.hadoop.mr.EsAssume;
 import org.elasticsearch.hadoop.mr.RestUtils;
+import org.elasticsearch.hadoop.util.EsMajorVersion;
 import org.elasticsearch.hadoop.util.StringUtils;
 import org.junit.After;
 import org.junit.Before;
@@ -67,7 +69,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonartistssave ("
                         + "json     STRING) "
-                        + tableProps("json-hive/artists");
+                        + tableProps("json-hive-artists/data");
 
         // transfer data
         String insert =
@@ -95,7 +97,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonexternalserdetest ("
                         + "data     STRING) "
-                        + tableProps("json-hive/externalserde");
+                        + tableProps("json-hive-externalserde/data");
 
         String insert =
                 "INSERT OVERWRITE TABLE jsonexternalserdetest "
@@ -117,7 +119,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonvarcharsave ("
                         + "json     VARCHAR(255))"
-                        + tableProps("json-hive/varcharsave");
+                        + tableProps("json-hive-varcharsave/data");
 
         // transfer data
         String insert =
@@ -143,7 +145,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsoncreatesave ("
                         + "json     STRING) "
-                        + tableProps("json-hive/createsave",
+                        + tableProps("json-hive-createsave/data",
                                 "'" + ConfigurationOptions.ES_MAPPING_ID + "'='number'",
                                 "'" + ConfigurationOptions.ES_WRITE_OPERATION + "'='create'");
 
@@ -171,7 +173,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsoncreatesaveduplicate ("
                         + "json     STRING) "
-                        + tableProps("json-hive/createsave",
+                        + tableProps("json-hive-createsave/data",
                                 "'" + ConfigurationOptions.ES_MAPPING_ID + "'='number'",
                                 "'" + ConfigurationOptions.ES_WRITE_OPERATION + "'='create'");
 
@@ -202,7 +204,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonupdatesave ("
                         + "json     STRING) "
-                        + tableProps("json-hive/updatesave",
+                        + tableProps("json-hive-updatesave/data",
                                 "'" + ConfigurationOptions.ES_MAPPING_ID + "'='number'",
                                 "'" + ConfigurationOptions.ES_WRITE_OPERATION + "'='upsert'");
 
@@ -234,7 +236,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonupdatewoupsertsave ("
                         + "json     STRING) "
-                        + tableProps("json-hive/updatewoupsertsave",
+                        + tableProps("json-hive-updatewoupsertsave/data",
                                 "'" + ConfigurationOptions.ES_MAPPING_ID + "'='number'",
                                 "'" + ConfigurationOptions.ES_WRITE_OPERATION + "'='update'");
 
@@ -255,7 +257,9 @@ public class AbstractHiveSaveJsonTest {
 
     @Test
     public void testParentChild() throws Exception {
-        RestUtils.putMapping("json-hive/child", "org/elasticsearch/hadoop/integration/mr-child.json");
+        EsAssume.versionOnOrBefore(EsMajorVersion.V_5_X, "Parent Child Disabled in 6.0");
+        RestUtils.createMultiTypeIndex("json-hive-pc");
+        RestUtils.putMapping("json-hive-pc", "child", "org/elasticsearch/hadoop/integration/mr-child.json");
 
         String localTable = createTable("jsonchildsource");
         String load = loadData("jsonchildsource");
@@ -264,7 +268,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonchild ("
                         + "json     STRING) "
-                        + tableProps("json-hive/child",
+                        + tableProps("json-hive-pc/child",
                                 "'" + ConfigurationOptions.ES_MAPPING_PARENT + "'='number'",
                                 "'" + ConfigurationOptions.ES_INDEX_AUTO_CREATE + "'='false'");
 
@@ -296,7 +300,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonpattern ("
                         + "json     STRING) "
-                        + tableProps("json-hive/pattern-{number}");
+                        + tableProps("json-hive-pattern-{number}/data");
 
         String selectTest = "SELECT s.json FROM jsonsourcepattern s";
 
@@ -326,7 +330,7 @@ public class AbstractHiveSaveJsonTest {
         String ddl =
                 "CREATE EXTERNAL TABLE jsonpatternformat ("
                         + "json     STRING) "
-                        + tableProps("json-hive/pattern-format-{@timestamp:YYYY-MM-dd}");
+                        + tableProps("json-hive-pattern-format-{@timestamp|YYYY-MM-dd}/data");
 
         String selectTest = "SELECT s.json FROM jsonsourcepatternformat s";
 

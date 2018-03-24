@@ -120,6 +120,10 @@ public abstract class Settings {
         return Integer.parseInt(getProperty(ES_BATCH_WRITE_RETRY_COUNT, ES_BATCH_WRITE_RETRY_COUNT_DEFAULT));
     }
 
+    public int getBatchWriteRetryLimit() {
+        return Integer.parseInt(getProperty(ES_BATCH_WRITE_RETRY_LIMIT, ES_BATCH_WRITE_RETRY_LIMIT_DEFAULT));
+    }
+
     public long getBatchWriteRetryWait() {
         return TimeValue.parseTimeValue(getProperty(ES_BATCH_WRITE_RETRY_WAIT, ES_BATCH_WRITE_RETRY_WAIT_DEFAULT)).getMillis();
     }
@@ -188,14 +192,6 @@ public abstract class Settings {
         return Booleans.parseBoolean(getProperty(ES_OUTPUT_JSON, ES_OUTPUT_JSON_DEFAULT));
     }
 
-    public boolean getFieldDetection() {
-        return Booleans.parseBoolean(getProperty(ES_AUTO_DETECT_FIELDS, ES_AUTO_DETECT_FIELDS_DEFAULT));
-    }
-    
-    public boolean getTypeDetection() {
-        return Booleans.parseBoolean(getProperty(ES_AUTO_CONVERT_TYPES, ES_AUTO_CONVERT_TYPES_DEFAULT));
-    }
-    
     public String getOperation() {
         return getProperty(ES_WRITE_OPERATION, ES_WRITE_OPERATION_DEFAULT).toLowerCase(Locale.ROOT);
     }
@@ -304,7 +300,19 @@ public abstract class Settings {
     }
 
     public String getUpdateScript() {
-        return getProperty(ES_UPDATE_SCRIPT);
+        return getProperty(ES_UPDATE_SCRIPT_LEGACY);
+    }
+
+    public String getUpdateScriptInline() {
+        return getLegacyProperty(ES_UPDATE_SCRIPT_LEGACY, ES_UPDATE_SCRIPT_INLINE, null);
+    }
+
+    public String getUpdateScriptFile() {
+        return getProperty(ES_UPDATE_SCRIPT_FILE);
+    }
+
+    public String getUpdateScriptStored() {
+        return getProperty(ES_UPDATE_SCRIPT_STORED);
     }
 
     public String getUpdateScriptLang() {
@@ -321,7 +329,13 @@ public abstract class Settings {
 
     public boolean hasUpdateScript() {
         String op = getOperation();
-        return ((ConfigurationOptions.ES_OPERATION_UPDATE.equals(op) || ConfigurationOptions.ES_OPERATION_UPSERT.equals(op)) && StringUtils.hasText(getUpdateScript()));
+        boolean hasScript = false;
+        if (ConfigurationOptions.ES_OPERATION_UPDATE.equals(op) || ConfigurationOptions.ES_OPERATION_UPSERT.equals(op)) {
+            hasScript = StringUtils.hasText(getUpdateScriptInline());
+            hasScript |= StringUtils.hasText(getUpdateScriptFile());
+            hasScript |= StringUtils.hasText(getUpdateScriptStored());
+        }
+        return hasScript;
     }
 
     public boolean hasUpdateScriptParams() {
@@ -408,10 +422,6 @@ public abstract class Settings {
 
     public boolean getNetworkSSLAcceptSelfSignedCert() {
         return Booleans.parseBoolean(getProperty(ES_NET_SSL_CERT_ALLOW_SELF_SIGNED, ES_NET_SSL_CERT_ALLOW_SELF_SIGNED_DEFAULT));
-    }
-    
-    public boolean getNetworkSSLAcceptAllCert() {
-        return Booleans.parseBoolean(getProperty(ES_NET_SSL_CERT_ALLOW_ALL, ES_NET_SSL_CERT_ALLOW_ALL_DEFAULT));
     }
 
     public String getNetworkHttpAuthUser() {
@@ -569,6 +579,10 @@ public abstract class Settings {
         return Booleans.parseBoolean(getProperty(ES_SPARK_DATAFRAME_WRITE_NULL_VALUES, ES_SPARK_DATAFRAME_WRITE_NULL_VALUES_DEFAULT));
     }
 
+    public boolean getInputUseSlicedPartitions() {
+        return Booleans.parseBoolean(getProperty(ES_INPUT_USE_SLICED_PARTITIONS, ES_INPUT_USE_SLICED_PARTITIONS_DEFAULT));
+    }
+
     public abstract InputStream loadResource(String location);
 
     public abstract Settings copy();
@@ -584,6 +598,10 @@ public abstract class Settings {
     public abstract String getProperty(String name);
 
     public abstract void setProperty(String name, String value);
+
+    public Settings getSettingsView(String name) {
+        return new SettingsView(this, name);
+    }
 
     public Settings merge(Properties properties) {
         if (properties == null || properties.isEmpty()) {

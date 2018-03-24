@@ -87,6 +87,9 @@ public interface ConfigurationOptions {
     String ES_BATCH_WRITE_RETRY_COUNT = "es.batch.write.retry.count";
     String ES_BATCH_WRITE_RETRY_COUNT_DEFAULT = "3";
 
+    String ES_BATCH_WRITE_RETRY_LIMIT = "es.batch.write.retry.limit";
+    String ES_BATCH_WRITE_RETRY_LIMIT_DEFAULT = "50";
+
     String ES_BATCH_WRITE_RETRY_WAIT = "es.batch.write.retry.wait";
     String ES_BATCH_WRITE_RETRY_WAIT_DEFAULT = "10s";
 
@@ -135,6 +138,9 @@ public interface ConfigurationOptions {
     int ES_DEFAULT_MAX_DOCS_PER_PARTITION = 100000;
     String ES_INPUT_JSON = "es.input.json";
     String ES_INPUT_JSON_DEFAULT = "no";
+
+    String ES_INPUT_USE_SLICED_PARTITIONS = "es.input.use.sliced.partitions";
+    String ES_INPUT_USE_SLICED_PARTITIONS_DEFAULT = "true";
 
     /** Index settings */
     String ES_INDEX_AUTO_CREATE = "es.index.auto.create";
@@ -202,11 +208,6 @@ public interface ConfigurationOptions {
     String ES_READ_FIELD_EMPTY_AS_NULL_LEGACY = "es.field.read.empty.as.null";
     String ES_READ_FIELD_EMPTY_AS_NULL_DEFAULT = "yes";
 
-    String ES_AUTO_DETECT_FIELDS = "es.field.auto.detect";
-    String ES_AUTO_DETECT_FIELDS_DEFAULT = "false";
-    String ES_AUTO_CONVERT_TYPES = "es.field.detect.types";
-    String ES_AUTO_CONVERT_TYPES_DEFAULT = "false";
-    
     String ES_READ_FIELD_VALIDATE_PRESENCE = "es.read.field.validate.presence";
     String ES_READ_FIELD_VALIDATE_PRESENCE_LEGACY = "es.field.read.validate.presence";
     String ES_READ_FIELD_VALIDATE_PRESENCE_DEFAULT = "warn";
@@ -242,7 +243,10 @@ public interface ConfigurationOptions {
     String ES_UPDATE_RETRY_ON_CONFLICT = "es.update.retry.on.conflict";
     String ES_UPDATE_RETRY_ON_CONFLICT_DEFAULT = "0";
 
-    String ES_UPDATE_SCRIPT = "es.update.script";
+    String ES_UPDATE_SCRIPT_FILE = "es.update.script.file";
+    String ES_UPDATE_SCRIPT_INLINE = "es.update.script.inline";
+    String ES_UPDATE_SCRIPT_STORED = "es.update.script.stored";
+    String ES_UPDATE_SCRIPT_LEGACY = "es.update.script";
     String ES_UPDATE_SCRIPT_LANG = "es.update.script.lang";
     String ES_UPDATE_SCRIPT_PARAMS = "es.update.script.params";
     String ES_UPDATE_SCRIPT_PARAMS_JSON = "es.update.script.params.json";
@@ -273,9 +277,6 @@ public interface ConfigurationOptions {
     String ES_NET_SSL_CERT_ALLOW_SELF_SIGNED = "es.net.ssl.cert.allow.self.signed";
     String ES_NET_SSL_CERT_ALLOW_SELF_SIGNED_DEFAULT = "false";
 
-    String ES_NET_SSL_CERT_ALLOW_ALL = "es.net.ssl.cert.allow.all";
-    String ES_NET_SSL_CERT_ALLOW_ALL_DEFAULT = "false";
-    
     String ES_NET_HTTP_HEADER_PREFIX = "es.net.http.header.";
 
     String ES_NET_HTTP_AUTH_USER = "es.net.http.auth.user";

@@ -26,9 +26,12 @@ es.resource = twitter/tweet   # index 'twitter', type 'tweet'
 `es.resource.write`(defaults to `es.resource`)::
 {es} resource used for writing (but not reading) data. Used typically for __dynamic resource__ writes or when writing and reading data to different {es} indices within the _same_ job. Typically set automatically (except for the {mr} module which requires manual configuration).
 
-Note that https://www.elastic.co/guide/en/elasticsearch/guide/current/multi-index-multi-type.html[multiple] indices and/or types are allowed *only* for reading. Use `_all/types` to search `types` in all indices or `index/` to search
-all types within `index`.
-Do note that reading multiple indices/types typically works only when they have the same structure and only with some libraries. Integrations that require a strongly typed mapping (such as a table like Hive or SparkSQL) are likely to fail.
+Note that specifying https://www.elastic.co/guide/en/elasticsearch/guide/current/multi-index-multi-type.html[multiple]
+indices and/or types in the above resource settings are allowed *only* for reading. Specifying multiple indices for
+writes is only supported through the use of dynamic resource (described <<cfg-multi-writes, below>>). Use `_all/types`
+to search `types` in all indices or `index/` to search all types within `index`. Do note that reading multiple
+indices/types typically works only when they have the same structure and only with some libraries. Integrations that
+require a strongly typed mapping (such as a table like Hive or SparkSQL) are likely to fail.
 
 [[cfg-multi-writes]]
 [float]
@@ -176,6 +179,18 @@ The document field/property name containing the document id.
 `es.mapping.parent` (default none)::
 The document field/property name containing the document parent. To specify a constant, use the `<CONSTANT>` format.
 
+added[5.6.0]
+`es.mapping.join` (default none)::
+The document field/property name containing the document's join field. Constants are not accepted. Join fields on a
+document must contain either the parent relation name as a string, or an object that contains the child relation name
+and the id of its parent. If a child document is identified when using this setting, the document's routing is
+automatically set to the parent id if no other routing is configured in `es.mapping.routing`.
+
+`es.mapping.routing` (default depends on +es.mapping.join+)::
+The document field/property name containing the document routing. To specify a constant, use the `<CONSTANT>` format.
+If a join field is specified with `es.mapping.join`, then this defaults to the value of the join field's parent id. If
+a join field is not specified, then this defaults to none.
+
 `es.mapping.version` (default none)::
 The document field/property name containing the document version. To specify a constant, use the `<CONSTANT>` format.
 
@@ -183,14 +198,15 @@ The document field/property name containing the document version. To specify a c
 Indicates the {ref}/docs-index_.html#_version_types[type of versioning] used.
 If +es.mapping.version+ is undefined (default), its value is unspecified. If +es.mapping.version+ is specified, its value becomes +external+.
 
-`es.mapping.routing` (default none)::
-The document field/property name containing the document routing. To specify a constant, use the `<CONSTANT>` format.
-
+deprecated[6.0.0]
 `es.mapping.ttl` (default none)::
 The document field/property name containing the document time-to-live. To specify a constant, use the `<CONSTANT>` format.
+Will not work on Elasticsearch 6.0+ index versions, but support will continue for 5.x index versions and below.
 
+deprecated[6.0.0]
 `es.mapping.timestamp` (default none)::
 The document field/property name containing the document timestamp. To specify a constant, use the `<CONSTANT>` format.
+Will not work on Elasticsearch 6.0+ index versions, but support will continue for 5.x index versions and below.
 
 added[2.1]
 `es.mapping.include` (default none)::
@@ -300,8 +316,17 @@ Whether to include the document version in the returned metadata. Applicable onl
 
 One using the `update` or `upsert` operation, additional settings (that mirror the {ref}/docs-update.html[update] API) are available:
 
-`es.update.script` (default none)::
-Script used for updating the document.
+`es.update.script.inline` (default none)::
+Inline Script used for updating the document.
+
+added[6.0]
+`es.update.script.file` (default none)::
+Name of file script to use for updating document. File scripts are removed in 6.x, and as such, this property will throw
+an error if used against a 6.x and above cluster.
+
+added[6.0]
+`es.update.script.stored` (default none)::
+Identifier of a stored script to use for updating the document.
 
 `es.update.script.lang` (default none)::
 Script language. By default, no value is specified applying the node configuration.
@@ -398,6 +423,10 @@ caution.
 added[5.0.0]
 `es.input.max.docs.per.partition` (default 100000)::
 When reading from an {es} cluster that supports scroll slicing ({es} v5.0.0 and above), this parameter advises the connector on what the maximum number of documents per input partition should be. The connector will sample and estimate the number of documents on each shard to be read and divides each shard into input slices using the value supplied by this property. This property is ignored if you are reading from an {es} cluster that does not support scroll slicing ({es} any version below v5.0.0).
+
+added[6.2.3]
+`es.input.use.sliced.partitions` (default true)::
+By default, when this parameter is true, sliced partitions are used (standard behavior for {es} v5.0.0 and above). This can cause a significant slowdown in the pre-reading phase of the index. In some cases, the preparation time can be significantly longer than the time it takes to retrieve the data. This option allows you to disable this behavior and use shard partitions (as for {es} before 5.0.0).
 
 [float]
 ==== Network
@@ -540,7 +569,7 @@ Whether to invoke an {ref}/indices-refresh.html[index refresh] or not after a bu
 Number of retries for a given batch in case {es} is overloaded and data is rejected. Note that only the rejected data is retried. If there is still data rejected after the retries have been performed, the Hadoop job is cancelled (and fails). A negative value indicates infinite retries; be careful in setting this value as it can have unwanted side effects.
 
 `es.batch.write.retry.wait` (default 10s)::
-Time to wait between batch write retries.
+Time to wait between batch write retries that are caused by bulk rejections.
 
 `es.ser.reader.value.class` (default _depends on the library used_)::
 Name of the `ValueReader` implementation for converting JSON to objects. This is set by the framework depending on the library ({mr}, Cascading, Hive, Pig, etc...) used.

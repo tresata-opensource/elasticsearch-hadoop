@@ -61,6 +61,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
 
 	private static final transient SparkConf conf = new SparkConf()
 			.setAll(propertiesAsScalaMap(TestSettings.TESTING_PROPS))
+			.set("spark.io.compression.codec", "lz4")
 			.setMaster("local").setAppName("estest");
 	
 	private static transient JavaSparkContext sc = null;
@@ -97,7 +98,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
 	public void testEsdataFrame1Write() throws Exception {
 		DataFrame dataFrame = artistsAsDataFrame();
 
-		String target = "sparksql-test/scala-basic-write";
+		String target = "sparksql-test-scala-basic-write/data";
 		JavaEsSparkSQL.saveToEs(dataFrame, target);
 		assertTrue(RestUtils.exists(target));
 		assertThat(RestUtils.get(target + "/_search?"), containsString("345"));
@@ -107,7 +108,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
 	public void testEsdataFrame1WriteWithId() throws Exception {
 		DataFrame dataFrame = artistsAsDataFrame();
 
-		String target = "sparksql-test/scala-basic-write-id-mapping";
+		String target = "sparksql-test-scala-basic-write-id-mapping/data";
 		JavaEsSparkSQL.saveToEs(dataFrame, target,
 				ImmutableMap.of(ES_MAPPING_ID, "id"));
 		assertTrue(RestUtils.exists(target));
@@ -119,7 +120,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
     public void testEsSchemaRDD1WriteWithMappingExclude() throws Exception {
     	DataFrame dataFrame = artistsAsDataFrame();
 
-        String target = "sparksql-test/scala-basic-write-exclude-mapping";
+        String target = "sparksql-test-scala-basic-write-exclude-mapping/data";
         JavaEsSparkSQL.saveToEs(dataFrame, target,ImmutableMap.of(ES_MAPPING_EXCLUDE, "url"));
         assertTrue(RestUtils.exists(target));
         assertThat(RestUtils.get(target + "/_search?"), not(containsString("url")));
@@ -127,7 +128,7 @@ public class AbstractJavaEsSparkSQLTest implements Serializable {
     
 	@Test
 	public void testEsdataFrame2Read() throws Exception {
-		String target = "sparksql-test/scala-basic-write";
+		String target = "sparksql-test-scala-basic-write/data";
 
         // DataFrame dataFrame = JavaEsSparkSQL.esDF(sqc, target);
         DataFrame dataFrame = sqc.read().format("es").load(target);
