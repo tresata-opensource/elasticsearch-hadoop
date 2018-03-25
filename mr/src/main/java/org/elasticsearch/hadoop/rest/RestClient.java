@@ -153,6 +153,10 @@ public class RestClient implements Closeable, StatsAware {
         }
         return nodes;
     }
+    
+    public InputStream getRaw(String q) {
+        return execute(GET, q);
+    }
 
     public <T> T get(String q, String string) {
         return parseContent(execute(GET, q), string);

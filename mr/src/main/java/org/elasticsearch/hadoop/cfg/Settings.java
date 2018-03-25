@@ -191,6 +191,14 @@ public abstract class Settings {
     public boolean getOutputAsJson() {
         return Booleans.parseBoolean(getProperty(ES_OUTPUT_JSON, ES_OUTPUT_JSON_DEFAULT));
     }
+    
+    public boolean getFieldDetection() {
+        return Booleans.parseBoolean(getProperty(ES_AUTO_DETECT_FIELDS, ES_AUTO_DETECT_FIELDS_DEFAULT));
+    }
+    
+    public boolean getTypeDetection() {
+        return Booleans.parseBoolean(getProperty(ES_AUTO_CONVERT_TYPES, ES_AUTO_CONVERT_TYPES_DEFAULT));
+    }
 
     public String getOperation() {
         return getProperty(ES_WRITE_OPERATION, ES_WRITE_OPERATION_DEFAULT).toLowerCase(Locale.ROOT);
@@ -423,7 +431,11 @@ public abstract class Settings {
     public boolean getNetworkSSLAcceptSelfSignedCert() {
         return Booleans.parseBoolean(getProperty(ES_NET_SSL_CERT_ALLOW_SELF_SIGNED, ES_NET_SSL_CERT_ALLOW_SELF_SIGNED_DEFAULT));
     }
-
+    
+    public boolean getNetworkSSLAcceptAllCert() {
+        return Booleans.parseBoolean(getProperty(ES_NET_SSL_CERT_ALLOW_ALL, ES_NET_SSL_CERT_ALLOW_ALL_DEFAULT));
+    }
+    
     public String getNetworkHttpAuthUser() {
         return getProperty(ES_NET_HTTP_AUTH_USER);
     }

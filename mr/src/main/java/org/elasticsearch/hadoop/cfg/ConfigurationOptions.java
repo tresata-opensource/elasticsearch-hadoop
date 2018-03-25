@@ -207,6 +207,11 @@ public interface ConfigurationOptions {
     String ES_READ_FIELD_EMPTY_AS_NULL = "es.read.field.empty.as.null";
     String ES_READ_FIELD_EMPTY_AS_NULL_LEGACY = "es.field.read.empty.as.null";
     String ES_READ_FIELD_EMPTY_AS_NULL_DEFAULT = "yes";
+    
+    String ES_AUTO_DETECT_FIELDS = "es.field.auto.detect";
+    String ES_AUTO_DETECT_FIELDS_DEFAULT = "false";
+    String ES_AUTO_CONVERT_TYPES = "es.field.detect.types";
+    String ES_AUTO_CONVERT_TYPES_DEFAULT = "false";
 
     String ES_READ_FIELD_VALIDATE_PRESENCE = "es.read.field.validate.presence";
     String ES_READ_FIELD_VALIDATE_PRESENCE_LEGACY = "es.field.read.validate.presence";
@@ -276,6 +281,9 @@ public interface ConfigurationOptions {
 
     String ES_NET_SSL_CERT_ALLOW_SELF_SIGNED = "es.net.ssl.cert.allow.self.signed";
     String ES_NET_SSL_CERT_ALLOW_SELF_SIGNED_DEFAULT = "false";
+    
+    String ES_NET_SSL_CERT_ALLOW_ALL = "es.net.ssl.cert.allow.all";
+    String ES_NET_SSL_CERT_ALLOW_ALL_DEFAULT = "false";
 
     String ES_NET_HTTP_HEADER_PREFIX = "es.net.http.header.";
 

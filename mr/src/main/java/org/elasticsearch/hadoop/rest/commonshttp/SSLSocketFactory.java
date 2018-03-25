@@ -91,6 +91,12 @@ class SSLSocketFactory implements SecureProtocolSocketFactory {
         }
     }
 
+    private static class TrustAllStrategy implements TrustStrategy {
+        public boolean isTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            return true;
+        }
+    }
+    
     private static final Log LOG = LogFactory.getLog(SSLSocketFactory.class);
 
     private SSLContext sslContext = null;
@@ -115,7 +121,7 @@ class SSLSocketFactory implements SecureProtocolSocketFactory {
         trustStoreLocation = settings.getNetworkSSLTrustStoreLocation();
         trustStorePass = settings.getNetworkSSLTrustStorePass();
 
-        trust = (settings.getNetworkSSLAcceptSelfSignedCert() ? new SelfSignedStrategy() : null);
+        trust = (settings.getNetworkSSLAcceptAllCert() ? new TrustAllStrategy() : (settings.getNetworkSSLAcceptSelfSignedCert() ? new SelfSignedStrategy() : null));
     }
 
     @Override
