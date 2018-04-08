@@ -114,10 +114,10 @@ uploadArchives {
         mavenDeployer {
             customizePom(pom, project)
             
-            repository(url: "http://server02:8080/repository/internal/") {
+            repository(url: "http://server02.tresata.com:8081/artifactory/libs-release") {
                 authentication(userName: mavenUser, password: mavenPassword)
             }
-            snapshotRepository(url: "http://server02:8080/repository/snapshots/") {
+            snapshotRepository(url: "http://server02.tresata.com:8081/artifactory/libs-snapshot") {
                 authentication(userName: mavenUser, password: mavenPassword)
             }
             if (enableArtifactSigning) {
