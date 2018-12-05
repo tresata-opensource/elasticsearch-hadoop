@@ -431,6 +431,10 @@ public abstract class Settings {
     public boolean getNetworkSSLAcceptSelfSignedCert() {
         return Booleans.parseBoolean(getProperty(ES_NET_SSL_CERT_ALLOW_SELF_SIGNED, ES_NET_SSL_CERT_ALLOW_SELF_SIGNED_DEFAULT));
     }
+    
+    public boolean getNetworkSSLAcceptAllCert() {
+        return Booleans.parseBoolean(getProperty(ES_NET_SSL_CERT_ALLOW_ALL, ES_NET_SSL_CERT_ALLOW_ALL_DEFAULT));
+    }
 
     public String getNetworkHttpAuthUser() {
         return getProperty(ES_NET_HTTP_AUTH_USER);
